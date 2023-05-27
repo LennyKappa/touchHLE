@@ -681,16 +681,12 @@ impl Environment {
                         }
                         ThreadBlock::DeferredReturn => {
                             if i == initial_thread {
-                                log_dbg!("Thread {} now able to return, returning", i);
+                                log_dbg!("Thread {} is now able to return, returning", i);
                                 self.threads[i].blocked_by = ThreadBlock::NotBlocked;
                                 // Thread is now top of call stack, should return
                                 self.switch_thread(i);
-                                if !deferred_threads.is_empty() {
-                                    log_dbg!("Threads {:?} were deferred", deferred_threads);
-                                }
                                 return;
                             } else {
-                                deferred_threads.push(i);
                                 continue;
                             }
                         }
@@ -702,9 +698,6 @@ impl Environment {
                     break;
                 }
 
-                if !deferred_threads.is_empty() {
-                    log_dbg!("Threads {:?} were deferred", deferred_threads);
-                }
                 // There's a suitable thread we can switch to immediately.
                 if let Some(suitable_thread) = suitable_thread {
                     if suitable_thread != self.current_thread {
