@@ -5,7 +5,9 @@
  */
 //! Time things including `CFAbsoluteTime`.
 
-use crate::dyld::{export_c_func, FunctionExports};
+use touchHLE_proc_macros::boxify;
+
+use crate::dyld::{export_c_func_async, FunctionExports};
 use crate::frameworks::foundation::NSTimeInterval;
 use crate::objc::msg_class;
 use crate::Environment;
@@ -13,9 +15,10 @@ use crate::Environment;
 pub type CFTimeInterval = NSTimeInterval;
 type CFAbsoluteTime = CFTimeInterval;
 
-fn CFAbsoluteTimeGetCurrent(env: &mut Environment) -> CFAbsoluteTime {
+#[boxify]
+async fn CFAbsoluteTimeGetCurrent(env: &mut Environment) -> CFAbsoluteTime {
     let time: NSTimeInterval = msg_class![env; NSProcessInfo systemUptime];
     time
 }
 
-pub const FUNCTIONS: FunctionExports = &[export_c_func!(CFAbsoluteTimeGetCurrent())];
+pub const FUNCTIONS: FunctionExports = &[export_c_func_async!(CFAbsoluteTimeGetCurrent())];

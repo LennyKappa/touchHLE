@@ -41,7 +41,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)imageWithContentsOfFile:(id)path { // NSString*
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithContentsOfFile:path];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 - (())dealloc {
@@ -55,7 +55,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let path = ns_string::to_rust_string(env, path); // TODO: avoid copy
     let Ok(bytes) = env.fs.read(GuestPath::new(&path)) else {
         log!("Warning: couldn't read image file at {:?}, returning nil", path);
-        release(env, this);
+        release(env, this).await;
         return nil;
     };
     // TODO: Real error handling. For now, most errors are likely to be caused

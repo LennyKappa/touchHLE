@@ -55,12 +55,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 - (id)model {
     // TODO: Hardcoded to iPhone for now
-    ns_string::get_static_str(env, "iPhone")
+    ns_string::get_static_str(env, "iPhone").await
 }
 
 // NSString
 - (id)systemVersion {
-    ns_string::get_static_str(env, "2.0")
+    ns_string::get_static_str(env, "2.0").await
 }
 
 - (bool)isMultitaskingSupported {

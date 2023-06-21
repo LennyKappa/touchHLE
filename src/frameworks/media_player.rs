@@ -14,6 +14,6 @@ pub struct State {
 
 /// For use by `NSRunLoop`: check media players' status, send notifications if
 /// necessary.
-pub fn handle_players(env: &mut crate::Environment) {
-    movie_player::handle_players(env);
+pub async fn handle_players(env: &mut crate::Environment) {
+    movie_player::handle_players(env).await;
 }

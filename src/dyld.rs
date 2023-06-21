@@ -34,6 +34,7 @@ use std::collections::HashMap;
 
 type HostFunction = &'static dyn CallFromGuest;
 
+
 /// Type for lists of functions exported by host implementations of frameworks.
 ///
 /// Each module that wants to expose functions to guest code should export a
@@ -87,7 +88,17 @@ macro_rules! export_c_func {
         )
     };
 }
-pub use crate::export_c_func; // #[macro_export] is weird...
+
+#[macro_export]
+macro_rules! export_c_func_async {
+    ($name:ident ($($_:ty),*)) => {
+        (
+            concat!("_", stringify!($name)),
+            &($name as fn(&mut $crate::Environment, $($_),*) -> std::pin::Pin<Box<dyn std::future::Future<Output = _> + '_>>)
+        )
+    };
+}
+pub use crate::{export_c_func, export_c_func_async}; // #[macro_export] is weird...
 
 /// Type for describing a constant (C `extern const` symbol) that will be
 /// created by the linker if the guest app references it. See [ConstantExports].
@@ -356,14 +367,14 @@ impl Dyld {
 
     /// Do linking that can only be done once there is a full [Environment].
     /// Not to be confused with lazy linking.
-    pub fn do_late_linking(env: &mut Environment) {
+    pub async fn do_late_linking(env: &mut Environment) {
         // TODO: do symbols ever appear in __nl_symbol_ptr multiple times?
 
         let to_link = std::mem::take(&mut env.dyld.constants_to_link_later);
         for (symbol_ptr_ptr, template) in to_link {
             let symbol_ptr: ConstVoidPtr = match template {
                 HostConstant::NSString(static_str) => {
-                    let string_ptr = ns_string::get_static_str(env, static_str);
+                    let string_ptr = ns_string::get_static_str(env, static_str).await;
                     let string_ptr_ptr = env.mem.alloc_and_write(string_ptr);
                     string_ptr_ptr.cast().cast_const()
                 }

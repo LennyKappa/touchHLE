@@ -59,8 +59,8 @@ pub const CLASSES: ClassExports = objc_classes! {
     let host_obj = env.objc.borrow_mut::<NSNotificationCenterHostObject>(this);
     let observers = std::mem::take(&mut host_obj.observers);
     for observer in observers.values().flatten() {
-        release(env, observer.observer);
-        release(env, observer.object);
+        release(env, observer.observer).await;
+        release(env, observer.object).await;
     }
     env.objc.dealloc_object(this, &mut env.mem);
 }
@@ -82,8 +82,8 @@ pub const CLASSES: ClassExports = objc_classes! {
         object,
     );
 
-    retain(env, observer);
-    retain(env, object); // TODO: is it correct that this is retained?
+    retain(env, observer).await;
+    retain(env, object).await; // TODO: is it correct that this is retained?
 
     let host_obj = env.objc.borrow_mut::<NSNotificationCenterHostObject>(this);
     host_obj.observers.entry(name).or_default().push(Observer {
@@ -129,8 +129,8 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
 
     for removed_observer in removed_observers {
-        release(env, removed_observer.observer);
-        release(env, removed_observer.object);
+        release(env, removed_observer.observer).await;
+        release(env, removed_observer.object).await;
     }
 }
 
@@ -168,7 +168,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         );
 
         // Signature should be `- (void)notification:(NSNotification *)notif`.
-        let _: () = msg_send(env, (observer, selector, notification));
+        let _: () = msg_send(env, (observer, selector, notification)).await;
     }
 }
 - (())postNotificationName:(NSNotificationName)name
@@ -185,7 +185,7 @@ pub const CLASSES: ClassExports = objc_classes! {
                                                         object:object
                                                       userInfo:user_info];
     let _: () = msg![env; this postNotification:notification];
-    release(env, notification);
+    release(env, notification).await;
 }
 
 @end

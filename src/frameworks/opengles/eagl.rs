@@ -67,7 +67,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.framework_state.opengles.current_ctx_for_thread(env.current_thread).unwrap_or(nil)
 }
 + (bool)setCurrentContext:(id)context { // EAGLContext*
-    retain(env, context);
+    retain(env, context).await;
 
     // Clear flag value, we're changing context anyway.
     let _ = env.window.is_app_gl_ctx_no_longer_current();
@@ -75,7 +75,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let current_ctx = env.framework_state.opengles.current_ctx_for_thread(env.current_thread);
 
     if let Some(old_ctx) = std::mem::take(current_ctx) {
-        release(env, old_ctx);
+        release(env, old_ctx).await;
         env.framework_state.opengles.current_ctx_thread = None;
     }
 
@@ -139,9 +139,9 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     let props: id = msg![env; drawable drawableProperties];
 
-    let format_key = get_static_str(env, kEAGLDrawablePropertyColorFormat);
-    let format_rgba8 = get_static_str(env, kEAGLColorFormatRGBA8);
-    let format_rgb565 = get_static_str(env, kEAGLColorFormatRGB565);
+    let format_key = get_static_str(env, kEAGLDrawablePropertyColorFormat).await;
+    let format_rgba8 = get_static_str(env, kEAGLColorFormatRGBA8).await;
+    let format_rgb565 = get_static_str(env, kEAGLColorFormatRGB565).await;
 
     let format: id = msg![env; props objectForKey:format_key];
     // Theoretically this should map formats like:

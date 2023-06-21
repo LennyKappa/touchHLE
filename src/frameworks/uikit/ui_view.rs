@@ -87,11 +87,11 @@ pub const CLASSES: ClassExports = objc_classes! {
     // TODO: avoid copying strings
     // TODO: decode the various other UIView properties
 
-    let key_ns_string = get_static_str(env, "UIBounds");
+    let key_ns_string = get_static_str(env, "UIBounds").await;
     let value = msg![env; coder decodeObjectForKey:key_ns_string];
     let bounds = parse_rect(&to_rust_string(env, value)).unwrap();
 
-    let key_ns_string = get_static_str(env, "UICenter");
+    let key_ns_string = get_static_str(env, "UICenter").await;
     let value = msg![env; coder decodeObjectForKey:key_ns_string];
     let center = parse_point(&to_rust_string(env, value)).unwrap();
 
@@ -144,7 +144,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())dealloc {
     let &mut UIViewHostObject { layer, .. } = env.objc.borrow_mut(this);
-    release(env, layer);
+    release(env, layer).await;
 
     env.framework_state.uikit.ui_view.views.swap_remove(
         env.framework_state.uikit.ui_view.views.iter().position(|&v| v == this).unwrap()

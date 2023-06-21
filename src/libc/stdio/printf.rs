@@ -5,12 +5,14 @@
  */
 //! `printf` function family. The implementation is also used by `NSLog` etc.
 
+use touchHLE_proc_macros::boxify;
+
 use crate::abi::{DotDotDot, VaList};
-use crate::dyld::{export_c_func, FunctionExports};
+use crate::dyld::FunctionExports;
 use crate::frameworks::foundation::ns_string;
 use crate::mem::{ConstPtr, GuestUSize, Mem, MutPtr};
 use crate::objc::{id, msg};
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 use std::io::Write;
 
 /// String formatting implementation for `printf` and `NSLog` function families.
@@ -20,7 +22,8 @@ use std::io::Write;
 ///
 /// `get_format_char` is a callback that returns the byte at a given index in
 /// the format string, or `'\0'` if the index is one past the last byte.
-pub fn printf_inner<const NS_LOG: bool, F: Fn(&Mem, GuestUSize) -> u8>(
+ 
+pub async fn printf_inner<const NS_LOG: bool, F: Fn(&Mem, GuestUSize) -> u8>(
     env: &mut Environment,
     get_format_char: F,
     mut args: VaList,
@@ -125,7 +128,8 @@ pub fn printf_inner<const NS_LOG: bool, F: Fn(&Mem, GuestUSize) -> u8>(
     res
 }
 
-fn vsnprintf(
+#[boxify]
+async fn vsnprintf(
     env: &mut Environment,
     dest: MutPtr<u8>,
     n: GuestUSize,
@@ -139,7 +143,7 @@ fn vsnprintf(
         env.mem.cstr_at_utf8(format)
     );
 
-    let res = printf_inner::<false, _>(env, |mem, idx| mem.read(format + idx), arg);
+    let res = printf_inner::<false, _>(env, |mem, idx| mem.read(format + idx), arg).await;
     let middle = if ((n - 1) as usize) < res.len() {
         &res[..(n - 1) as usize]
     } else {
@@ -154,7 +158,8 @@ fn vsnprintf(
     res.len().try_into().unwrap()
 }
 
-fn vsprintf(env: &mut Environment, dest: MutPtr<u8>, format: ConstPtr<u8>, arg: VaList) -> i32 {
+#[boxify]
+async fn vsprintf(env: &mut Environment, dest: MutPtr<u8>, format: ConstPtr<u8>, arg: VaList) -> i32 {
     log_dbg!(
         "vsprintf({:?}, {:?} ({:?}), ...)",
         dest,
@@ -162,7 +167,7 @@ fn vsprintf(env: &mut Environment, dest: MutPtr<u8>, format: ConstPtr<u8>, arg: 
         env.mem.cstr_at_utf8(format)
     );
 
-    let res = printf_inner::<false, _>(env, |mem, idx| mem.read(format + idx), arg);
+    let res = printf_inner::<false, _>(env, |mem, idx| mem.read(format + idx), arg).await;
 
     let dest_slice = env
         .mem
@@ -174,7 +179,8 @@ fn vsprintf(env: &mut Environment, dest: MutPtr<u8>, format: ConstPtr<u8>, arg: 
     res.len().try_into().unwrap()
 }
 
-fn sprintf(env: &mut Environment, dest: MutPtr<u8>, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
+#[boxify]
+async fn sprintf(env: &mut Environment, dest: MutPtr<u8>, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
     log_dbg!(
         "sprintf({:?}, {:?} ({:?}), ...)",
         dest,
@@ -182,7 +188,7 @@ fn sprintf(env: &mut Environment, dest: MutPtr<u8>, format: ConstPtr<u8>, args: 
         env.mem.cstr_at_utf8(format)
     );
 
-    let res = printf_inner::<false, _>(env, |mem, idx| mem.read(format + idx), args.start());
+    let res = printf_inner::<false, _>(env, |mem, idx| mem.read(format + idx), args.start()).await;
 
     let dest_slice = env
         .mem
@@ -194,14 +200,15 @@ fn sprintf(env: &mut Environment, dest: MutPtr<u8>, format: ConstPtr<u8>, args: 
     res.len().try_into().unwrap()
 }
 
-fn printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
+#[boxify]
+async fn printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
     log_dbg!(
         "printf({:?} ({:?}), ...)",
         format,
         env.mem.cstr_at_utf8(format)
     );
 
-    let res = printf_inner::<false, _>(env, |mem, idx| mem.read(format + idx), args.start());
+    let res = printf_inner::<false, _>(env, |mem, idx| mem.read(format + idx), args.start()).await;
     // TODO: I/O error handling
     let _ = std::io::stdout().write_all(&res);
     res.len().try_into().unwrap()
@@ -210,8 +217,8 @@ fn printf(env: &mut Environment, format: ConstPtr<u8>, args: DotDotDot) -> i32 {
 // TODO: more printf variants
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(vsnprintf(_, _, _, _)),
-    export_c_func!(vsprintf(_, _, _)),
-    export_c_func!(sprintf(_, _, _)),
-    export_c_func!(printf(_, _)),
+    export_c_func_async!(vsnprintf(_, _, _, _)),
+    export_c_func_async!(vsprintf(_, _, _)),
+    export_c_func_async!(sprintf(_, _, _)),
+    export_c_func_async!(printf(_, _)),
 ];

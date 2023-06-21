@@ -5,7 +5,9 @@
  */
 //! `AudioFile.h` (Audio File Services)
 
-use crate::audio; // Keep this module namespaced to avoid confusion
+use touchHLE_proc_macros::boxify;
+
+use crate::{audio, export_c_func_async}; // Keep this module namespaced to avoid confusion
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::frameworks::carbon_core::OSStatus;
 use crate::frameworks::core_audio_types::{
@@ -60,7 +62,8 @@ const kAudioFilePropertyPacketSizeUpperBound: AudioFilePropertyID = fourcc(b"pku
 const kAudioFilePropertyMagicCookieData: AudioFilePropertyID = fourcc(b"mgic");
 const kAudioFilePropertyChannelLayout: AudioFilePropertyID = fourcc(b"cmap");
 
-fn AudioFileOpenURL(
+#[boxify]
+async fn AudioFileOpenURL(
     env: &mut Environment,
     in_file_ref: CFURLRef,
     in_permissions: AudioFilePermissions,
@@ -74,7 +77,7 @@ fn AudioFileOpenURL(
                                                          // formats that can't be uniquely identified, which we don't support so far.
     assert!(in_file_type_hint == 0);
 
-    let path = to_rust_path(env, in_file_ref);
+    let path = to_rust_path(env, in_file_ref).await;
     let Ok(audio_file) = audio::AudioFile::open_for_reading(path, &env.fs) else {
         log!("Warning: AudioFileOpenURL() for path {:?} failed", in_file_ref);
         return kAudioFileFileNotFoundError;
@@ -319,7 +322,7 @@ fn AudioFileClose(env: &mut Environment, in_audio_file: AudioFileID) -> OSStatus
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(AudioFileOpenURL(_, _, _, _)),
+    export_c_func_async!(AudioFileOpenURL(_, _, _, _)),
     export_c_func!(AudioFileGetPropertyInfo(_, _, _, _)),
     export_c_func!(AudioFileGetProperty(_, _, _, _)),
     export_c_func!(AudioFileReadBytes(_, _, _, _, _)),

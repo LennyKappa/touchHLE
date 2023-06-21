@@ -38,7 +38,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         bundle
     } else {
         let bundle_path = env.bundle.bundle_path().as_str().to_string();
-        let bundle_path = ns_string::from_rust_string(env, bundle_path);
+        let bundle_path = ns_string::from_rust_string(env, bundle_path).await;
         let host_object = NSBundleHostObject {
             _bundle: None,
             bundle_path,
@@ -57,7 +57,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (())dealloc {
     let &NSBundleHostObject { bundle_url, .. } = env.objc.borrow(this);
     if let Some(bundle_url) = bundle_url {
-        release(env, bundle_url);
+        release(env, bundle_url).await;
     }
     env.objc.dealloc_object(this, &mut env.mem)
 }
@@ -118,7 +118,7 @@ pub const CLASSES: ClassExports = objc_classes! {
                                             inDirectory:subpath];
    let path_url: id = msg_class![env; NSURL alloc];
    let path_url: id = msg![env; path_url initFileURLWithPath:path_string];
-   autorelease(env, path_url)
+   autorelease(env, path_url).await
 }
 - (id)URLForResource:(id)name // NSString*
        withExtension:(id)extension { // NSString *

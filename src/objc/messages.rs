@@ -11,6 +11,11 @@
 //! - Mike Ash's [objc_msgSend's New Prototype](https://www.mikeash.com/pyblog/objc_msgsends-new-prototype.html)
 //! - Peter Steinberger's [Calling Super at Runtime in Swift](https://steipete.com/posts/calling-super-at-runtime/) explains `objc_msgSendSuper2`
 
+use std::pin::Pin;
+
+use futures::Future;
+use touchHLE_proc_macros::boxify;
+
 use super::{id, nil, Class, ObjC, IMP, SEL};
 use crate::abi::{CallFromHost, GuestRet};
 use crate::mem::{ConstPtr, MutVoidPtr, SafeRead};
@@ -29,7 +34,7 @@ use crate::Environment;
 /// by the method implementation. We are relying on CallFromGuest not
 /// overwriting it.
 #[allow(non_snake_case)]
-fn objc_msgSend_inner(env: &mut Environment, receiver: id, selector: SEL, super2: Option<Class>) {
+async fn objc_msgSend_inner(env: &mut Environment, receiver: id, selector: SEL, super2: Option<Class>) {
     if receiver == nil {
         // https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ObjectiveC/Chapters/ocObjectsClasses.html#//apple_ref/doc/uid/TP30001163-CH11-SW7
         log_dbg!("[nil {}]", selector.as_str(&env.mem));
@@ -87,10 +92,10 @@ fn objc_msgSend_inner(env: &mut Environment, receiver: id, selector: SEL, super2
 
             if let Some(imp) = methods.get(&selector) {
                 match imp {
-                    IMP::Host(host_imp) => host_imp.call_from_guest(env),
+                    IMP::Host(host_imp) => host_imp.call_from_guest(env).await,
                     // We can't create a new stack frame, because that would
                     // interfere with pass-through of stack arguments.
-                    IMP::Guest(guest_imp) => guest_imp.call_without_pushing_stack_frame(env),
+                    IMP::Guest(guest_imp) => guest_imp.call_without_pushing_stack_frame(env).await,
                 }
                 return;
             } else {
@@ -133,8 +138,9 @@ fn objc_msgSend_inner(env: &mut Environment, receiver: id, selector: SEL, super2
 
 /// Standard variant of `objc_msgSend`. See [objc_msgSend_inner].
 #[allow(non_snake_case)]
-pub(super) fn objc_msgSend(env: &mut Environment, receiver: id, selector: SEL) {
-    objc_msgSend_inner(env, receiver, selector, /* super2: */ None)
+#[boxify]
+pub(super) async fn objc_msgSend(env: &mut Environment, receiver: id, selector: SEL) {
+    objc_msgSend_inner(env, receiver, selector, /* super2: */ None).await
 }
 
 /// Variant of `objc_msgSend` for methods that return a struct via a pointer.
@@ -146,16 +152,18 @@ pub(super) fn objc_msgSend(env: &mut Environment, receiver: id, selector: SEL) {
 /// pass-through behaviour. Of course, the pass-through only works if the [IMP]
 /// also has the pointer parameter. The caller therefore has to pick the
 /// appropriate `objc_msgSend` variant depending on the method it wants to call.
-pub(super) fn objc_msgSend_stret(
+#[boxify]
+pub(super) async fn objc_msgSend_stret(
     env: &mut Environment,
     _stret: MutVoidPtr,
     receiver: id,
     selector: SEL,
 ) {
-    objc_msgSend_inner(env, receiver, selector, /* super2: */ None)
+    objc_msgSend_inner(env, receiver, selector, /* super2: */ None).await
 }
 
 #[repr(C, packed)]
+#[allow(non_camel_case_types)]
 pub(super) struct objc_super {
     receiver: id,
     /// If this is used with `objc_msgSendSuper` (not implemented here, TODO),
@@ -174,7 +182,8 @@ unsafe impl SafeRead for objc_super {}
 /// for arguments passed onto the method implementation. Hence the [objc_super]
 /// pointer in place of the normal [id].
 #[allow(non_snake_case)]
-pub(super) fn objc_msgSendSuper2(
+#[boxify]
+pub(super) async fn objc_msgSendSuper2(
     env: &mut Environment,
     super_ptr: ConstPtr<objc_super>,
     selector: SEL,
@@ -184,7 +193,7 @@ pub(super) fn objc_msgSendSuper2(
     // Rewrite first argument to match the normal ABI.
     crate::abi::write_next_arg(&mut 0, env.cpu.regs_mut(), &mut env.mem, receiver);
 
-    objc_msgSend_inner(env, receiver, selector, /* super2: */ Some(class))
+    objc_msgSend_inner(env, receiver, selector, /* super2: */ Some(class)).await
 }
 
 /// Wrapper around [objc_msgSend] which, together with [msg], makes it easy to
@@ -195,16 +204,16 @@ pub(super) fn objc_msgSendSuper2(
 ///
 /// TODO: Could we pass along dynamic type information to `objc_msgSend` so it
 /// can do runtime type-checking? Perhaps only in debug builds.
-pub fn msg_send<R, P>(env: &mut Environment, args: P) -> R
+pub async fn msg_send<R, P>(env: &mut Environment, args: P) -> R
 where
-    fn(&mut Environment, id, SEL): CallFromHost<R, P>,
-    fn(&mut Environment, MutVoidPtr, id, SEL): CallFromHost<R, P>,
+    fn(&mut Environment, id, SEL) -> Pin<Box<(dyn futures::Future<Output = ()> + '_)>> : CallFromHost<R, P>,
+    fn(&mut Environment, MutVoidPtr, id, SEL) -> Pin<Box<(dyn futures::Future<Output = ()> + '_)>>: CallFromHost<R, P>,
     R: GuestRet,
 {
     if R::SIZE_IN_MEM.is_some() {
-        (objc_msgSend_stret as fn(&mut Environment, MutVoidPtr, id, SEL)).call_from_host(env, args)
+        (objc_msgSend_stret as fn(&mut Environment, _, _, _) -> Pin<Box<dyn Future<Output = _> + '_>>).call_from_host(env, args).await
     } else {
-        (objc_msgSend as fn(&mut Environment, id, SEL)).call_from_host(env, args)
+        (objc_msgSend as fn(&mut Environment, _, _) -> Pin<Box<dyn Future<Output = _> + '_>>).call_from_host(env, args).await
     }
 }
 
@@ -238,7 +247,7 @@ macro_rules! msg {
             let sel = $env.objc.lookup_selector(sel)
                 .expect("Unknown selector");
             let args = ($receiver, sel, $($arg1,)? $($argn),*);
-            $crate::objc::msg_send($env, args)
+            $crate::objc::msg_send($env, args).await
         }
     }
 }
@@ -270,10 +279,10 @@ macro_rules! msg_class {
         }
     }
 }
-pub use crate::msg_class; // #[macro_export] is weird...
+pub use crate::msg_class;
 
 /// Shorthand for `let _: id = msg![env; object retain];`
-pub fn retain(env: &mut Environment, object: id) -> id {
+pub async fn retain(env: &mut Environment, object: id) -> id {
     if object == nil {
         // fast path
         return nil;
@@ -282,7 +291,7 @@ pub fn retain(env: &mut Environment, object: id) -> id {
 }
 
 /// Shorthand for `() = msg![env; object release];`
-pub fn release(env: &mut Environment, object: id) {
+pub async fn release(env: &mut Environment, object: id) {
     if object == nil {
         // fast path
         return;
@@ -291,7 +300,7 @@ pub fn release(env: &mut Environment, object: id) {
 }
 
 /// Shorthand for `let _: id = msg![env; object autorelease];`
-pub fn autorelease(env: &mut Environment, object: id) -> id {
+pub async fn autorelease(env: &mut Environment, object: id) -> id {
     if object == nil {
         // fast path
         return nil;

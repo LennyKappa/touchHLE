@@ -43,7 +43,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let new: id = msg![env; this alloc];
     env.objc.borrow_mut::<CharacterSetHostObject>(new).set = set;
 
-    autorelease(env, new);
+    autorelease(env, new).await;
 
     new
 }
@@ -51,7 +51,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
     // TODO: override this once we have NSMutableCharacterSet!
-    retain(env, this)
+    retain(env, this).await
 }
 
 @end

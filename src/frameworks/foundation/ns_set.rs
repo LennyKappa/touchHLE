@@ -43,13 +43,13 @@ pub const CLASSES: ClassExports = objc_classes! {
     assert!(object != nil);
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithObject:object];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
     // TODO: override this once we have NSMutableSet!
-    retain(env, this)
+    retain(env, this).await
 }
 
 @end
@@ -69,7 +69,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let null: id = msg_class![env; NSNull null];
 
     let mut dict = <DictionaryHostObject as Default>::default();
-    dict.insert(env, object, null, /* copy_key: */ false);
+    dict.insert(env, object, null, /* copy_key: */ false).await;
 
     env.objc.borrow_mut::<SetHostObject>(this).dict = dict;
 
@@ -77,7 +77,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())dealloc {
-    std::mem::take(&mut env.objc.borrow_mut::<SetHostObject>(this).dict).release(env);
+    std::mem::take(&mut env.objc.borrow_mut::<SetHostObject>(this).dict).release(env).await;
     env.objc.dealloc_object(this, &mut env.mem)
 }
 
@@ -95,7 +95,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)allObjects {
     let objects = env.objc.borrow_mut::<SetHostObject>(this).dict.iter_keys().collect();
-    ns_array::from_vec(env, objects)
+    ns_array::from_vec(env, objects).await
 }
 
 // NSFastEnumeration implementation

@@ -8,6 +8,8 @@
 //! The audio playback here is mapped onto OpenAL Soft for convenience.
 //! Apple's implementation probably uses Core Audio instead.
 
+use touchHLE_proc_macros::boxify;
+
 use crate::abi::{CallFromHost, GuestFunction};
 use crate::audio::decode_ima4;
 use crate::audio::openal as al;
@@ -26,7 +28,7 @@ use crate::frameworks::foundation::ns_run_loop;
 use crate::frameworks::foundation::ns_string::get_static_str;
 use crate::mem::{ConstPtr, ConstVoidPtr, GuestUSize, Mem, MutPtr, MutVoidPtr, Ptr, SafeRead};
 use crate::objc::msg;
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 use std::collections::{HashMap, VecDeque};
 
 #[derive(Default)]
@@ -126,7 +128,8 @@ const kAudioQueueParam_Volume: AudioQueueParameterID = 1;
 
 type AudioQueueParameterValue = f32;
 
-fn AudioQueueNewOutput(
+#[boxify]
+async fn AudioQueueNewOutput(
     env: &mut Environment,
     in_format: ConstPtr<AudioStreamBasicDescription>,
     in_callback_proc: AudioQueueOutputCallback,
@@ -141,7 +144,7 @@ fn AudioQueueNewOutput(
     // NULL is a synonym of kCFRunLoopCommonModes here
     assert!(
         in_callback_run_loop_mode.is_null() || {
-            let common_modes = get_static_str(env, kCFRunLoopCommonModes);
+            let common_modes = get_static_str(env, kCFRunLoopCommonModes).await;
             msg![env; in_callback_run_loop_mode isEqualTo:common_modes]
         }
     );
@@ -150,7 +153,7 @@ fn AudioQueueNewOutput(
         // FIXME: According to the documentation, "one of the audio queue's
         // internal threads" should be used if you don't specify a run loop.
         // We should have an "internal thread" instead of using the main thread.
-        CFRunLoopGetMain(env)
+        CFRunLoopGetMain(env).await
     } else {
         in_callback_run_loop
     };
@@ -495,7 +498,7 @@ fn unqueue_buffers<F: FnMut(ALuint)>(al_source: ALuint, mut callback: F) {
 
 /// For use by `NSRunLoop`: check the status of an audio queue, recycle buffers,
 /// call callbacks, push new buffers etc.
-pub fn handle_audio_queue(env: &mut Environment, in_aq: AudioQueueRef) {
+pub async fn handle_audio_queue(env: &mut Environment, in_aq: AudioQueueRef) {
     // Collect used buffers and call the user callback so the app can provide
     // new buffers.
 
@@ -535,7 +538,7 @@ pub fn handle_audio_queue(env: &mut Environment, in_aq: AudioQueueRef) {
             callback_user_data
         );
 
-        let () = callback_proc.call_from_host(env, (callback_user_data, in_aq, buffer_ref));
+        let () = callback_proc.call_from_host(env, (callback_user_data, in_aq, buffer_ref)).await;
     }
 
     // Push new buffers etc.
@@ -682,7 +685,7 @@ fn AudioQueueDispose(env: &mut Environment, in_aq: AudioQueueRef, in_immediate: 
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(AudioQueueNewOutput(_, _, _, _, _, _, _)),
+    export_c_func_async!(AudioQueueNewOutput(_, _, _, _, _, _, _)),
     export_c_func!(AudioQueueSetParameter(_, _, _)),
     export_c_func!(AudioQueueAllocateBuffer(_, _, _)),
     export_c_func!(AudioQueueEnqueueBuffer(_, _, _, _)),

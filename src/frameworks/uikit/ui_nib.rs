@@ -36,7 +36,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // NSCoding implementation
 - (id)initWithCoder:(id)coder {
-    let id_key = get_static_str(env, "UIProxiedObjectIdentifier");
+    let id_key = get_static_str(env, "UIProxiedObjectIdentifier").await;
     let id_nss: id = msg![env; coder decodeObjectForKey:id_key];
     let id = to_rust_string(env, id_nss);
 
@@ -58,7 +58,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         //   to the NSKeyedUnarchiver. That might be needed to implement
         //   replacement for objects other than the UIApplication instance.
 
-        release(env, this);
+        release(env, this).await;
         msg_class![env; UIApplication sharedApplication]
     } else {
         log!("TODO: UIProxyObject replacement for {}, instance {:?} left unreplaced", id, this);
@@ -76,11 +76,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 // NSCoding implementation
 - (id)initWithCoder:(id)coder {
 
-    let name_key = get_static_str(env, "UIClassName");
+    let name_key = get_static_str(env, "UIClassName").await;
     let name_nss: id = msg![env; coder decodeObjectForKey:name_key];
     let name = to_rust_string(env, name_nss);
 
-    let orig_key = get_static_str(env, "UIOriginalClassName");
+    let orig_key = get_static_str(env, "UIOriginalClassName").await;
     let orig_nss: id = msg![env; coder decodeObjectForKey:orig_key];
     let orig = to_rust_string(env, orig_nss);
 
@@ -92,7 +92,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     } else {
         msg![env; object initWithCoder:coder]
     };
-    release(env, this);
+    release(env, this).await;
     // TODO: autorelease the object?
     object
 }
@@ -115,18 +115,18 @@ pub const CLASSES: ClassExports = objc_classes! {
 // NSCoding implementation
 - (id)initWithCoder:(id)coder {
 
-    let destination_key = get_static_str(env, "UIDestination");
+    let destination_key = get_static_str(env, "UIDestination").await;
     let destination: id = msg![env; coder decodeObjectForKey: destination_key];
 
-    let label_key = get_static_str(env, "UILabel");
+    let label_key = get_static_str(env, "UILabel").await;
     let label: id = msg![env; coder decodeObjectForKey: label_key];
 
-    let source_key = get_static_str(env, "UISource");
+    let source_key = get_static_str(env, "UISource").await;
     let source: id = msg![env; coder decodeObjectForKey: source_key];
 
-    retain(env, destination);
-    retain(env, source);
-    retain(env, label);
+    retain(env, destination).await;
+    retain(env, source).await;
+    retain(env, label).await;
     let host_obj = env.objc.borrow_mut::<UIRuntimeOutletConnectionHostObject>(this);
     host_obj.destination = destination;
     host_obj.label = label;
@@ -151,9 +151,9 @@ pub const CLASSES: ClassExports = objc_classes! {
         label,
         source
     } = env.objc.borrow(this);
-    release(env, destination);
-    release(env, label);
-    release(env, source);
+    release(env, destination).await;
+    release(env, label).await;
+    release(env, source).await;
 
     env.objc.dealloc_object(this, &mut env.mem)
 }
@@ -170,7 +170,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 /// return [nib instantiateWithOwner:[UIApplication sharedApplication]
 ///                     optionsOrNil:nil];
 /// ```
-pub fn load_main_nib_file(env: &mut Environment, _ui_application: id) {
+pub async fn load_main_nib_file(env: &mut Environment, _ui_application: id) {
     let Some(path) = env.bundle.main_nib_file_path() else {
         return;
     };
@@ -192,11 +192,11 @@ pub fn load_main_nib_file(env: &mut Environment, _ui_application: id) {
 
     // We don't need to do anything with the list of objects, but deserializing
     // it ensures everything else is deserialized.
-    let objects_key = get_static_str(env, "UINibObjectsKey");
+    let objects_key = get_static_str(env, "UINibObjectsKey").await;
     let _objects: id = msg![env; unarchiver decodeObjectForKey:objects_key];
 
     // Connect all the outlets with UIRuntimeOutletConnection
-    let conns_key = get_static_str(env, "UINibConnectionsKey");
+    let conns_key = get_static_str(env, "UINibConnectionsKey").await;
     let conns: id = msg![env; unarchiver decodeObjectForKey:conns_key];
     let conns_count: NSUInteger = msg![env; conns count];
     for i in 0..conns_count {
@@ -204,5 +204,5 @@ pub fn load_main_nib_file(env: &mut Environment, _ui_application: id) {
         () = msg![env; conn connect];
     }
 
-    release(env, unarchiver);
+    release(env, unarchiver).await;
 }

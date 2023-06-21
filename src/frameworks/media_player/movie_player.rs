@@ -63,7 +63,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         "TODO: [(MPMoviePlayerController*){:?} initWithContentURL:{:?} ({:?})]",
         this,
         url,
-        ns_url::to_rust_path(env, url),
+        ns_url::to_rust_path(env, url).await,
     );
 
     // Act as if loading immediately completed (Spore Origins waits for this).
@@ -103,7 +103,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     }
     assert!(env.framework_state.media_player.movie_player.active_player.is_none());
     // Movie player is retained by the runtime until it is stopped
-    retain(env, this);
+    retain(env, this).await;
     env.framework_state.media_player.movie_player.active_player = Some(this);
 
     // Act as if playback immediately completed (various apps wait for this).
@@ -115,7 +115,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (())stop {
     log!("TODO: [(MPMoviePlayerController*){:?} stop]", this);
     assert!(this == env.framework_state.media_player.movie_player.active_player.take().unwrap());
-    release(env, this);
+    release(env, this).await;
 }
 
 @end
@@ -124,10 +124,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 /// For use by `NSRunLoop` via [super::handle_players]: check movie players'
 /// status, send notifications if necessary.
-pub(super) fn handle_players(env: &mut Environment) {
+pub(super) async fn handle_players(env: &mut Environment) {
     while let Some(notif) = State::get(env).pending_notifications.pop_front() {
         let (name, object) = notif;
-        let name = ns_string::get_static_str(env, name);
+        let name = ns_string::get_static_str(env, name).await;
         let center: id = msg_class![env; NSNotificationCenter defaultCenter];
         // TODO: should there be some user info attached?
         let _: () = msg![env; center postNotificationName:name object:object];

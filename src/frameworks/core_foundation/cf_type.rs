@@ -5,18 +5,22 @@
  */
 //! `CFType` (type-generic functions etc).
 
-use crate::dyld::{export_c_func, FunctionExports};
-use crate::objc;
+use touchHLE_proc_macros::boxify;
+
+use crate::dyld::FunctionExports;
+use crate::{objc, export_c_func_async};
 use crate::Environment;
 
 pub type CFTypeRef = objc::id;
 
-pub fn CFRetain(env: &mut Environment, object: CFTypeRef) -> CFTypeRef {
+#[boxify]
+pub async fn CFRetain(env: &mut Environment, object: CFTypeRef) -> CFTypeRef {
     assert!(!object.is_null()); // not allowed, unlike for normal objc objects
-    objc::retain(env, object)
+    objc::retain(env, object).await
 }
-pub fn CFRelease(env: &mut Environment, object: CFTypeRef) {
-    objc::release(env, object);
+#[boxify]
+pub async fn CFRelease(env: &mut Environment, object: CFTypeRef) {
+    objc::release(env, object).await;
 }
 
-pub const FUNCTIONS: FunctionExports = &[export_c_func!(CFRetain(_)), export_c_func!(CFRelease(_))];
+pub const FUNCTIONS: FunctionExports = &[export_c_func_async!(CFRetain(_)), export_c_func_async!(CFRelease(_))];

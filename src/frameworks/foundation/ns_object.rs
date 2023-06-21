@@ -127,7 +127,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         &key[1..],
     )) {
         if env.objc.class_has_method(class, sel) {
-            return msg_send(env, (this, sel, value));
+            return msg_send(env, (this, sel, value)).await;
         }
     }
 
@@ -137,7 +137,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         &key[1..],
     )) {
         if env.objc.class_has_method(class, sel) {
-            return msg_send(env, (this, sel, value));
+            return msg_send(env, (this, sel, value)).await;
         }
     }
 

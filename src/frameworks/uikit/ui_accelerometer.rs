@@ -121,7 +121,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 /// update is due and send one if appropriate.
 ///
 /// Returns the time an accelerometer update is due, if any.
-pub(super) fn handle_accelerometer(env: &mut Environment) -> Option<Instant> {
+pub(super) async fn handle_accelerometer(env: &mut Environment) -> Option<Instant> {
     let state = &mut env.framework_state.uikit.ui_accelerometer;
 
     let Some(delegate) = state.delegate else {
@@ -168,7 +168,7 @@ pub(super) fn handle_accelerometer(env: &mut Environment) -> Option<Instant> {
         z: z.into(),
         timestamp,
     };
-    autorelease(env, acceleration);
+    autorelease(env, acceleration).await;
 
     let accelerometer: id = msg_class![env; UIAccelerometer sharedAccelerometer];
 
@@ -181,7 +181,7 @@ pub(super) fn handle_accelerometer(env: &mut Environment) -> Option<Instant> {
     let _: () = msg![env; delegate accelerometer:accelerometer
                                    didAccelerate:acceleration];
 
-    release(env, pool);
+    release(env, pool).await;
 
     new_due_by
 }

@@ -220,20 +220,20 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)stringWithUTF8String:(ConstPtr<u8>)utf8_string {
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithUTF8String:utf8_string];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 + (id)stringWithCString:(ConstPtr<u8>)c_string {
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithCString:c_string];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 + (id)stringWithCString:(ConstPtr<u8>)c_string
                encoding:(NSStringEncoding)encoding {
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithCString:c_string encoding:encoding];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 + (id)stringWithContentsOfFile:(id)path // NSString*
@@ -243,7 +243,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let new: id = msg![env; new initWithContentsOfFile:path
                                               encoding:encoding
                                                  error:error];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 + (id)stringWithFormat:(id)format, // NSString*
@@ -263,10 +263,10 @@ pub const CLASSES: ClassExports = objc_classes! {
             }
         },
         args.start(),
-    );
+    ).await;
     // TODO: what if it's not valid UTF-8?
-    let res = from_rust_string(env, String::from_utf8(res).unwrap());
-    autorelease(env, res)
+    let res = from_rust_string(env, String::from_utf8(res).unwrap()).await;
+    autorelease(env, res).await
 }
 
 // These are the two methods that have to be overridden by subclasses, so these
@@ -346,7 +346,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
     // TODO: override this once we have NSMutableString!
-    retain(env, this)
+    retain(env, this).await
 }
 
 - (bool)getCString:(MutPtr<u8>)buffer
@@ -422,8 +422,8 @@ pub const CLASSES: ClassExports = objc_classes! {
         let host_object = Box::new(StringHostObject::Utf16(utf16));
         env.objc.alloc_object(class, host_object, &mut env.mem)
     }).collect();
-    let array = ns_array::from_vec(env, component_ns_strings);
-    autorelease(env, array)
+    let array = ns_array::from_vec(env, component_ns_strings).await;
+    autorelease(env, array).await
 }
 
 - (ConstPtr<u8>)cStringUsingEncoding:(NSStringEncoding)encoding {
@@ -472,7 +472,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let res_length = res_end - res_start;
 
     let res = if res_length == initial_length {
-        retain(env, this)
+        retain(env, this).await
     } else {
         // TODO: just call `substringWithRange:` here instead, the only reason
         // the current code doesn't is that it would require figuring out the
@@ -489,7 +489,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         *env.objc.borrow_mut(res) = StringHostObject::Utf16(res_utf16);
         res
     };
-    autorelease(env, res)
+    autorelease(env, res).await
 }
 
 - (id)stringByReplacingOccurrencesOfString:(id)target // NSString*
@@ -526,7 +526,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     // worth the effort, but it's an interesting question.
     let result_ns_string = msg_class![env; _touchHLE_NSString alloc];
     *env.objc.borrow_mut(result_ns_string) = StringHostObject::Utf16(result);
-    autorelease(env, result_ns_string)
+    autorelease(env, result_ns_string).await
 }
 
 - (id)stringByAppendingString:(id)other { // NSString*
@@ -554,39 +554,45 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (id)stringByDeletingLastPathComponent {
     let string = to_rust_string(env, this); // TODO: avoid copying
     let (res, _) = path_algorithms::split_last_path_component(&string);
-    let new_string = from_rust_string(env, String::from(res));
-    autorelease(env, new_string)
+    let new_string = from_rust_string(env, String::from(res)).await;
+    autorelease(env, new_string).await
 }
 
 - (id)lastPathComponent {
     let string = to_rust_string(env, this); // TODO: avoid copying
     let (_, res) = path_algorithms::split_last_path_component(&string);
-    let new_string = from_rust_string(env, String::from(res));
-    autorelease(env, new_string)
+    let new_string = from_rust_string(env, String::from(res)).await;
+    autorelease(env, new_string).await
 }
 
 - (id)pathComponents {
     let string = to_rust_string(env, this); // TODO: avoid copying
     let vec = path_algorithms::split_path_components(&string);
+    // IMM: check?
+    let mut collect = Vec::new();
+    for component in vec {
+        collect.push(from_rust_string(env, component.to_string()).await);
+    }
+    /*
     let vec = vec.iter().map(|component| {
         from_rust_string(env, component.to_string())
-    }).collect();
-    let array = ns_array::from_vec(env, vec);
-    autorelease(env, array)
+    }).collect();*/
+    let array = ns_array::from_vec(env, collect).await;
+    autorelease(env, array).await
 }
 
 - (id)stringByDeletingPathExtension {
     let string = to_rust_string(env, this); // TODO: avoid copying
     let (res, _) = path_algorithms::split_path_extension(&string);
-    let new_string = from_rust_string(env, String::from(res));
-    autorelease(env, new_string)
+    let new_string = from_rust_string(env, String::from(res)).await;
+    autorelease(env, new_string).await
 }
 
 - (id)pathExtension {
     let string = to_rust_string(env, this); // TODO: avoid copying
     let (_, res) = path_algorithms::split_path_extension(&string);
-    let new_string = from_rust_string(env, String::from(res));
-    autorelease(env, new_string)
+    let new_string = from_rust_string(env, String::from(res)).await;
+    autorelease(env, new_string).await
 }
 
 - (id)stringByAppendingPathComponent:(id)component { // NSString*
@@ -594,8 +600,8 @@ pub const CLASSES: ClassExports = objc_classes! {
     // FIXME: check if Rust join() matches NSString (it probably doesn't)
     let combined = GuestPath::new(&to_rust_string(env, this))
         .join(to_rust_string(env, component));
-    let new_string = from_rust_string(env, String::from(combined));
-    autorelease(env, new_string)
+    let new_string = from_rust_string(env, String::from(combined)).await;
+    autorelease(env, new_string).await
 }
 
 - (id)stringByAppendingPathExtension:(id)extension { // NSString*
@@ -605,8 +611,8 @@ pub const CLASSES: ClassExports = objc_classes! {
     // TODO: avoid copying
     combined.push_str(&to_rust_string(env, extension));
 
-    let new_string = from_rust_string(env, combined);
-    autorelease(env, new_string)
+    let new_string = from_rust_string(env, combined).await;
+    autorelease(env, new_string).await
 }
 
 // These come from a category in UIKit (UIStringDrawing).
@@ -802,7 +808,7 @@ pub fn register_constant_strings(bin: &MachO, mem: &mut Mem, objc: &mut ObjC) {
 
 /// Shortcut for host code: get an NSString corresponding to a `&'static str`,
 /// which does not have to be released and is never deallocated.
-pub fn get_static_str(env: &mut Environment, from: &'static str) -> id {
+pub async fn get_static_str(env: &mut Environment, from: &'static str) -> id {
     if let Some(&existing) = State::get(env).static_str_pool.get(from) {
         existing
     } else {
@@ -815,7 +821,7 @@ pub fn get_static_str(env: &mut Environment, from: &'static str) -> id {
 
 /// Shortcut for host code, roughly equivalent to
 /// `[[NSString alloc] initWithUTF8String:]` in the proper API.
-pub fn from_rust_string(env: &mut Environment, from: String) -> id {
+pub async fn from_rust_string(env: &mut Environment, from: String) -> id {
     let string: id = msg_class![env; _touchHLE_NSString alloc];
     let host_object: &mut StringHostObject = env.objc.borrow_mut(string);
     *host_object = StringHostObject::Utf8(Cow::Owned(from));

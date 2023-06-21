@@ -5,8 +5,10 @@
  */
 //! `pthread_once`.
 
+use touchHLE_proc_macros::boxify;
+
 use crate::abi::GuestFunction;
-use crate::dyld::{export_c_func, FunctionExports};
+use crate::dyld::{export_c_func_async, FunctionExports};
 use crate::mem::{MutPtr, SafeRead};
 use crate::Environment;
 
@@ -23,7 +25,8 @@ struct pthread_once_t {
 }
 unsafe impl SafeRead for pthread_once_t {}
 
-fn pthread_once(
+#[boxify]
+async fn pthread_once(
     env: &mut Environment,
     once_control: MutPtr<pthread_once_t>,
     init_routine: GuestFunction, // void (*init_routine)(void)
@@ -42,7 +45,7 @@ fn pthread_once(
                 init: 0xFFFFFFFF,
             };
             env.mem.write(once_control, new_once);
-            init_routine.call(env);
+            init_routine.call(env).await;
             log_dbg!("Init routine {:?} done", init_routine);
         }
         0xFFFFFFFF => {
@@ -56,4 +59,4 @@ fn pthread_once(
     0 // success. TODO: return an error on failure?
 }
 
-pub const FUNCTIONS: FunctionExports = &[export_c_func!(pthread_once(_, _))];
+pub const FUNCTIONS: FunctionExports = &[export_c_func_async!(pthread_once(_, _))];

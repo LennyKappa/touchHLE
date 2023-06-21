@@ -43,23 +43,23 @@ pub const CLASSES: ClassExports = objc_classes! {
                   userInfo:(id)user_info {
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithName:name object:object userInfo:user_info];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 - (id)initWithName:(NSNotificationName)name
             object:(id)object
           userInfo:(id)user_info { // NSDictionary*
-    retain(env, name);
-    retain(env, object);
+    retain(env, name).await;
+    retain(env, object).await;
     let user_info: id = msg![env; user_info copy];
     *env.objc.borrow_mut(this) = NSNotificationHostObject { name, object, user_info };
     this
 }
 - (())dealloc {
     let &NSNotificationHostObject { name, object, user_info } = env.objc.borrow(this);
-    release(env, name);
-    release(env, object);
-    release(env, user_info);
+    release(env, name).await;
+    release(env, object).await;
+    release(env, user_info).await;
     env.objc.dealloc_object(this, &mut env.mem);
 }
 

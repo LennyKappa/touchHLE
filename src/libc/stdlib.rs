@@ -5,10 +5,12 @@
  */
 //! `stdlib.h`
 
+use touchHLE_proc_macros::boxify;
+
 use crate::abi::{CallFromHost, GuestFunction};
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::mem::{ConstPtr, ConstVoidPtr, GuestUSize, MutPtr, MutVoidPtr, Ptr};
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 use std::collections::HashMap;
 
 pub mod qsort;
@@ -189,7 +191,8 @@ fn exit(_env: &mut Environment, exit_code: i32) {
     std::process::exit(exit_code);
 }
 
-fn bsearch(
+#[boxify]
+async fn bsearch(
     env: &mut Environment,
     key: ConstVoidPtr,
     items: ConstVoidPtr,
@@ -210,7 +213,7 @@ fn bsearch(
         let half_len = len / 2;
         let item: ConstVoidPtr = (items.cast::<u8>() + item_size * (low + half_len)).cast();
         // key must be first argument
-        let cmp_result: i32 = compare_callback.call_from_host(env, (key, item));
+        let cmp_result: i32 = compare_callback.call_from_host(env, (key, item)).await;
         (low, len) = match cmp_result.signum() {
             0 => {
                 log_dbg!("=> {:?}", item);
@@ -239,5 +242,5 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(getenv(_)),
     export_c_func!(setenv(_, _, _)),
     export_c_func!(exit(_)),
-    export_c_func!(bsearch(_, _, _, _, _)),
+    export_c_func_async!(bsearch(_, _, _, _, _)),
 ];

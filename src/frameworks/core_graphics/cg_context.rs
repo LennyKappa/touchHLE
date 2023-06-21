@@ -5,12 +5,14 @@
  */
 //! `CGContext.h`
 
+use touchHLE_proc_macros::boxify;
+
 use super::cg_image::CGImageRef;
 use super::{cg_bitmap_context, CGFloat, CGRect};
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::frameworks::core_foundation::{CFRelease, CFRetain, CFTypeRef};
 use crate::objc::{objc_classes, ClassExports, HostObject};
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -43,9 +45,10 @@ pub fn CGContextRelease(env: &mut Environment, c: CGContextRef) {
         CFRelease(env, c);
     }
 }
-pub fn CGContextRetain(env: &mut Environment, c: CGContextRef) -> CGContextRef {
+#[boxify]
+pub async fn CGContextRetain(env: &mut Environment, c: CGContextRef) -> CGContextRef {
     if !c.is_null() {
-        CFRetain(env, c)
+        CFRetain(env, c).await
     } else {
         c
     }
@@ -89,7 +92,7 @@ fn CGContextDrawImage(
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(CGContextRetain(_)),
+    export_c_func_async!(CGContextRetain(_)),
     export_c_func!(CGContextRelease(_)),
     export_c_func!(CGContextSetRGBFillColor(_, _, _, _, _)),
     export_c_func!(CGContextFillRect(_, _)),

@@ -8,24 +8,29 @@
 //! This is not even toll-free bridged to `NSBundle` in Apple's implementation,
 //! but here it is the same type.
 
+use touchHLE_proc_macros::boxify;
+
 use super::cf_string::CFStringRef;
 use super::cf_url::CFURLRef;
-use crate::dyld::{export_c_func, FunctionExports};
+use crate::dyld::{export_c_func_async, FunctionExports};
 use crate::objc::{msg, msg_class};
 use crate::Environment;
 
 pub type CFBundleRef = super::CFTypeRef;
 
-fn CFBundleGetMainBundle(env: &mut Environment) -> CFBundleRef {
+#[boxify]
+async fn CFBundleGetMainBundle(env: &mut Environment) -> CFBundleRef {
     msg_class![env; NSBundle mainBundle]
 }
 
-fn CFBundleCopyResourcesDirectoryURL(env: &mut Environment, bundle: CFBundleRef) -> CFURLRef {
+#[boxify]
+async fn CFBundleCopyResourcesDirectoryURL(env: &mut Environment, bundle: CFBundleRef) -> CFURLRef {
     let url: CFURLRef = msg![env; bundle resourceURL];
     msg![env; url copy]
 }
 
-fn CFBundleCopyResourceURL(
+#[boxify]
+async fn CFBundleCopyResourceURL(
     env: &mut Environment,
     bundle: CFBundleRef,
     resource_name: CFStringRef,
@@ -39,7 +44,7 @@ fn CFBundleCopyResourceURL(
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(CFBundleGetMainBundle()),
-    export_c_func!(CFBundleCopyResourcesDirectoryURL(_)),
-    export_c_func!(CFBundleCopyResourceURL(_, _, _, _)),
+    export_c_func_async!(CFBundleGetMainBundle()),
+    export_c_func_async!(CFBundleCopyResourcesDirectoryURL(_)),
+    export_c_func_async!(CFBundleCopyResourceURL(_, _, _, _)),
 ];

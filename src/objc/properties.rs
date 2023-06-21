@@ -14,6 +14,8 @@
 //!
 //! See also: [crate::frameworks::foundation::ns_object].
 
+use touchHLE_proc_macros::boxify;
+
 use super::{id, msg, nil, release, retain, SEL};
 use crate::mem::{ConstVoidPtr, GuestISize, GuestUSize, MutPtr, MutVoidPtr, Ptr};
 use crate::Environment;
@@ -21,7 +23,8 @@ use crate::Environment;
 /// Undocumented function (see link above) apparently used by auto-generated
 /// methods for properties to set an ivar and handle reference counting, copying
 /// and locking.
-pub(super) fn objc_setProperty(
+#[boxify]
+pub(super) async fn objc_setProperty(
     env: &mut Environment,
     this: id,
     _cmd: SEL,
@@ -46,7 +49,7 @@ pub(super) fn objc_setProperty(
     let void_null: MutVoidPtr = Ptr::null();
     let value: id = if value != nil {
         match should_copy {
-            0 => retain(env, value),
+            0 => retain(env, value).await,
             1 => msg![env; value copyWithZone:void_null],
             2 => msg![env; value mutableCopyWithZone:void_null],
             // Apple's source code implies that any non-zero value that isn't 2
@@ -59,7 +62,7 @@ pub(super) fn objc_setProperty(
     env.mem.write(ivar, value);
 
     if old != nil {
-        release(env, old);
+        release(env, old).await;
     }
 }
 

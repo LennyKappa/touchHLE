@@ -5,8 +5,10 @@
  */
 //! `UIApplication` and `UIApplicationMain`.
 
+use touchHLE_proc_macros::boxify;
+
 use super::ui_device::*;
-use crate::dyld::{export_c_func, FunctionExports};
+use crate::dyld::FunctionExports;
 use crate::frameworks::foundation::ns_string;
 use crate::frameworks::uikit::ui_nib::load_main_nib_file;
 use crate::mem::MutPtr;
@@ -14,7 +16,7 @@ use crate::objc::{
     id, msg, msg_class, nil, objc_classes, release, retain, ClassExports, HostObject, NSZonePtr,
 };
 use crate::window::DeviceOrientation;
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 
 #[derive(Default)]
 pub struct State {
@@ -70,7 +72,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let old_delegate = std::mem::replace(&mut host_object.delegate, delegate);
     if host_object.delegate_is_retained {
         host_object.delegate_is_retained = false;
-        release(env, old_delegate);
+        release(env, old_delegate).await;
     }
 }
 
@@ -116,7 +118,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     // frame! Super Monkey Ball also doesn't check whether opening failed, so
     // it's probably best to always exit.
     echo!("App opened URL {:?}, exiting.", url_string);
-    exit(env);
+    exit(env).await;
     true
 }
 
@@ -127,7 +129,8 @@ pub const CLASSES: ClassExports = objc_classes! {
 /// `UIApplicationMain`, the entry point of the application.
 ///
 /// This function should never return.
-pub(super) fn UIApplicationMain(
+#[boxify]
+pub(super) async fn UIApplicationMain(
     env: &mut Environment,
     _argc: i32,
     _argv: MutPtr<MutPtr<u8>>,
@@ -149,7 +152,7 @@ pub(super) fn UIApplicationMain(
         };
         let ui_application: id = msg![env; principal_class new];
 
-        load_main_nib_file(env, ui_application);
+        load_main_nib_file(env, ui_application).await;
 
         let delegate: id = msg![env; ui_application delegate];
         if delegate != nil {
@@ -159,7 +162,7 @@ pub(super) fn UIApplicationMain(
             env.objc
                 .borrow_mut::<UIApplicationHostObject>(ui_application)
                 .delegate_is_retained = true;
-            retain(env, delegate);
+            retain(env, delegate).await;
         } else {
             // We have to construct the delegate.
             assert!(delegate_class_name != nil);
@@ -212,7 +215,7 @@ pub(super) fn UIApplicationMain(
 }
 
 /// Tell the app it's about to quit and then exit.
-pub(super) fn exit(env: &mut Environment) {
+pub(super) async fn exit(env: &mut Environment) {
     let ui_application: id = msg_class![env; UIApplication sharedApplication];
     let delegate: id = msg![env; ui_application delegate];
 
@@ -233,4 +236,4 @@ pub(super) fn exit(env: &mut Environment) {
     std::process::exit(0);
 }
 
-pub const FUNCTIONS: FunctionExports = &[export_c_func!(UIApplicationMain(_, _, _, _))];
+pub const FUNCTIONS: FunctionExports = &[export_c_func_async!(UIApplicationMain(_, _, _, _))];

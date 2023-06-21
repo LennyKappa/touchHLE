@@ -19,6 +19,7 @@
 //! categories and dynamic class editing).
 
 use crate::dyld::{export_c_func, FunctionExports};
+use crate::export_c_func_async;
 use crate::libc::pthread::mutex::HostMutexId;
 
 use std::collections::HashMap;
@@ -82,10 +83,10 @@ impl ObjC {
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(objc_msgSend(_, _)),
-    export_c_func!(objc_msgSend_stret(_, _, _)),
-    export_c_func!(objc_msgSendSuper2(_, _)),
-    export_c_func!(objc_setProperty(_, _, _, _, _, _)),
+    export_c_func_async!(objc_msgSend(_, _)),
+    export_c_func_async!(objc_msgSend_stret(_, _, _)),
+    export_c_func_async!(objc_msgSendSuper2(_, _)),
+    export_c_func_async!(objc_setProperty(_, _, _, _, _, _)),
     export_c_func!(objc_copyStruct(_, _, _, _, _)),
     export_c_func!(objc_sync_enter(_)),
     export_c_func!(objc_sync_exit(_)),

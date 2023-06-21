@@ -8,18 +8,22 @@
 //! This is not even toll-free bridged to `NSRunLoop` in Apple's implementation,
 //! but here it is the same type.
 
-use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant};
+use touchHLE_proc_macros::boxify;
+
+use crate::dyld::{export_c_func_async, ConstantExports, FunctionExports, HostConstant};
 use crate::objc::msg_class;
 use crate::Environment;
 
 pub type CFRunLoopRef = super::CFTypeRef;
 pub type CFRunLoopMode = super::cf_string::CFStringRef;
 
-fn CFRunLoopGetCurrent(env: &mut Environment) -> CFRunLoopRef {
+#[boxify]
+async fn CFRunLoopGetCurrent(env: &mut Environment) -> CFRunLoopRef {
     msg_class![env; NSRunLoop currentRunLoop]
 }
 
-pub fn CFRunLoopGetMain(env: &mut Environment) -> CFRunLoopRef {
+#[boxify]
+pub async fn CFRunLoopGetMain(env: &mut Environment) -> CFRunLoopRef {
     msg_class![env; NSRunLoop mainRunLoop]
 }
 
@@ -38,6 +42,6 @@ pub const CONSTANTS: ConstantExports = &[
 ];
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(CFRunLoopGetCurrent()),
-    export_c_func!(CFRunLoopGetMain()),
+    export_c_func_async!(CFRunLoopGetCurrent()),
+    export_c_func_async!(CFRunLoopGetMain()),
 ];

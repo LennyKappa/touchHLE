@@ -46,8 +46,8 @@ pub const CLASSES: ClassExports = objc_classes! {
             log!("The app requested your preferred language. No LANG environment variable was found, so {:?} (English) will be reported.", lang);
             lang
         };
-        let lang_ns_string = ns_string::from_rust_string(env, lang);
-        let new = ns_array::from_vec(env, vec![lang_ns_string]);
+        let lang_ns_string = ns_string::from_rust_string(env, lang).await;
+        let new = ns_array::from_vec(env, vec![lang_ns_string]).await;
         State::get(env).preferred_languages = Some(new);
         new
     }

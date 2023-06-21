@@ -38,14 +38,14 @@ pub const CLASSES: ClassExports = objc_classes! {
                    length:(NSUInteger)length {
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithBytesNoCopy:bytes length:length];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 + (id)dataWithBytes:(MutVoidPtr)bytes
              length:(NSUInteger)length {
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithBytes:bytes length:length];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 // Calling the standard `init` is also allowed, in which case we just get data
@@ -75,7 +75,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let path = to_rust_string(env, path);
     log_dbg!("[(NSData*){:?} initWithContentsOfFile:{:?}]", this, path);
     let Ok(bytes) = env.fs.read(GuestPath::new(&path)) else {
-        release(env, this);
+        release(env, this).await;
         return nil;
     };
     let size = bytes.len().try_into().unwrap();
@@ -115,7 +115,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
-    retain(env, this)
+    retain(env, this).await
 }
 
 - (ConstVoidPtr)bytes {

@@ -10,8 +10,12 @@
 
 use crate::abi::GuestRet;
 use crate::libc::pthread::mutex::{host_mutex_is_locked, host_mutex_relock_unblocked, HostMutexId};
+use futures::executor::block_on;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::mem::{MutPtr, MutVoidPtr};
+use crate::thread_support::YieldFuture;
 use crate::{
     abi, bundle, cpu, dyld, frameworks, fs, gdb, image, libc, mach_o, mem, objc, options, stack,
     window,
@@ -90,6 +94,7 @@ pub struct Environment {
     pub framework_state: frameworks::State,
     pub options: options::Options,
     gdb_server: Option<gdb::GdbServer>,
+    swapper: Option<Rc<RefCell<Environment>>>,
 }
 
 /// What to do next when executing this thread.
@@ -241,9 +246,11 @@ impl Environment {
             framework_state: Default::default(),
             options,
             gdb_server: None,
+            swapper: None,
         };
-
-        dyld::Dyld::do_late_linking(&mut env);
+        
+        // IMM: is this ok?
+        block_on(dyld::Dyld::do_late_linking(&mut env));
 
         {
             let bin_path = env.bundle.executable_path();
@@ -298,7 +305,8 @@ impl Environment {
             let count = section.size / 4;
             for i in 0..count {
                 let func = env.mem.read(base + i);
-                func.call(&mut env);
+                // IMM: This is probably less ok? maybe?
+                block_on(func.call(&mut env));
             }
             log_dbg!("Static initialization done");
         }
@@ -363,6 +371,7 @@ impl Environment {
         start_routine: abi::GuestFunction,
         user_data: mem::MutVoidPtr,
     ) -> ThreadID {
+        todo!("Fix threading");
         let stack_size = mem::Mem::SECONDARY_THREAD_STACK_SIZE;
         let stack_alloc = self.mem.alloc(stack_size);
         let stack_high_addr = stack_alloc.to_bits() + stack_size;
@@ -400,7 +409,7 @@ impl Environment {
     /// Put the current thread to sleep for some duration, running other threads
     /// in the meantime as appropriate. Functions that call sleep right before they return should set
     /// tail_call.
-    pub fn sleep(&mut self, duration: Duration, tail_call: bool) {
+    pub async fn sleep(&mut self, duration: Duration, tail_call: bool) {
         assert!(matches!(
             self.threads[self.current_thread].blocked_by,
             ThreadBlock::NotBlocked
@@ -421,7 +430,7 @@ impl Environment {
             // Since the current thread is asleep, this will only run other threads
             // until it wakes up, at which point it signals return-to-host and
             // control is returned to this function.
-            self.run_call();
+            self.run_call().await;
             self.cpu.branch(old_pc);
         }
     }
@@ -430,6 +439,7 @@ impl Environment {
     /// Other threads also blocking on this mutex may get access first.
     /// Also note that like [Self::sleep], this only takes effect after the host function returns.
     pub fn block_on_mutex(&mut self, mutex_id: HostMutexId) {
+        todo!("fix mutexes");
         assert!(matches!(
             self.threads[self.current_thread].blocked_by,
             ThreadBlock::NotBlocked
@@ -443,6 +453,7 @@ impl Environment {
     }
 
     pub fn join_with_thread(&mut self, joinee_thread: ThreadID, ptr: MutPtr<MutVoidPtr>) {
+        todo!("Fix join");
         assert!(matches!(
             self.threads[self.current_thread].blocked_by,
             ThreadBlock::NotBlocked
@@ -457,28 +468,129 @@ impl Environment {
 
     /// Run the emulator. This is the main loop and won't return until app exit.
     /// Only `main.rs` should call this.
-    pub fn run(&mut self) {
+
+    pub fn run(
+        bundle: bundle::Bundle,
+        fs: fs::Fs,
+        options: options::Options,
+    ) -> Result<(), String> {
+        let mut env = Environment::new(bundle, fs, options)?;
         // I'm not sure if this actually is unwind-safe, but considering
         // the emulator will crash anyway, maybe this is okay.
-        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.run_inner(true)));
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            block_on(env.run_iter(true))
+        }));
+        Ok(())
+    }
+    /*
         if let Err(e) = res {
             echo!("Register state immediately after panic:");
-            self.cpu.dump_regs();
-            self.stack_trace();
+            env.cpu.dump_regs();
+            env.stack_trace();
             std::panic::resume_unwind(e);
         }
-    }
+        loop {
+            // Try to find a new thread to execute, starting with the thread
+            // following the one currently executing.
+            let mut suitable_thread: Option<ThreadID> = None;
+            let mut next_awakening: Option<Instant> = None;
+            let mut mutex_to_relock: Option<HostMutexId> = None;
+            for i in 0..env.threads.len() {
+                let i = (env.current_thread + 1 + i) % env.threads.len();
+                let candidate = &mut env.threads[i];
 
+                if !candidate.active || candidate.in_host_function {
+                    continue;
+                }
+                match candidate.blocked_by {
+                    ThreadBlock::Sleeping(sleeping_until) => {
+                        if sleeping_until <= Instant::now() {
+                            log_dbg!("Thread {} finished sleeping.", i);
+                            candidate.blocked_by = ThreadBlock::NotBlocked;
+                            suitable_thread = Some(i);
+                            break;
+                        } else {
+                            next_awakening = match next_awakening {
+                                None => Some(sleeping_until),
+                                Some(other) => Some(other.min(sleeping_until)),
+                            };
+                        }
+                    }
+                    ThreadBlock::Mutex(mutex_id) => {
+                        if !host_mutex_is_locked(&env, mutex_id) {
+                            log_dbg!("Thread {} was unblocked due to mutex #{} unlocking, relocking mutex.", i, mutex_id);
+                            env.threads[i].blocked_by = ThreadBlock::NotBlocked;
+                            suitable_thread = Some(i);
+                            mutex_to_relock = Some(mutex_id);
+                            break;
+                        }
+                    }
+                    ThreadBlock::Joining(joinee_thread, ptr) => {
+                        if !env.threads[joinee_thread].active {
+                            log_dbg!(
+                                "Thread {} joining with now finished thread {}.",
+                                env.current_thread,
+                                joinee_thread
+                            );
+                            // Write the return valiue, unless the pointer to write to is null.
+                            if !ptr.is_null() {
+                                env.mem.write(
+                                    ptr,
+                                    env.threads[joinee_thread].return_value.unwrap(),
+                                );
+                            }
+                            env.threads[i].blocked_by = ThreadBlock::NotBlocked;
+                            suitable_thread = Some(i);
+                            break;
+                        }
+                    }
+                    ThreadBlock::DeferredReturn => {
+                        unimplemented!()
+                    }
+                    ThreadBlock::NotBlocked => {
+                        suitable_thread = Some(i);
+                        break;
+                    }
+                }
+            }
+
+            // There's a suitable thread we can switch to immediately.
+            if let Some(suitable_thread) = suitable_thread {
+                if suitable_thread != env.current_thread {
+                    env.switch_thread(suitable_thread);
+                }
+                if let Some(mutex_id) = mutex_to_relock {
+                    host_mutex_relock_unblocked(&mut env, mutex_id);
+                }
+                break;
+            // All suitable threads are blocked and at least one is asleep.
+            // Sleep until one of them wakes up.
+            } else if let Some(next_awakening) = next_awakening {
+                let duration = next_awakening.duration_since(Instant::now());
+                log_dbg!("All threads blocked/asleep, sleeping for {:?}.", duration);
+                std::thread::sleep(duration);
+                // Try again, there should be some thread awake now (or
+                // there will be soon, since timing is approximate).
+                continue;
+            } else {
+                // This should hopefully not happen, but if a thread is blocked on another
+                // thread waiting for a deferred return, it could.
+                panic!("No active threads, program has deadlocked!");
+            }
+        }
+        Ok(())
+    }
+    */
     /// Run the emulator until the app returns control to the host. This is for
     /// host-to-guest function calls (see [abi::GuestFunction::call]).
     ///
     /// Note that this might execute code from other threads while waiting for
     /// the app to return control on the original thread!
-    pub fn run_call(&mut self) {
+    pub async fn run_call(&mut self) {
         let was_in_host_function = self.threads[self.current_thread].in_host_function;
         let old_thread = self.current_thread;
         self.threads[self.current_thread].in_host_function = false;
-        self.run_inner(false);
+        self.run_iter(false).await;
         assert!(self.current_thread == old_thread);
         self.threads[self.current_thread].in_host_function = was_in_host_function;
     }
@@ -537,7 +649,7 @@ impl Environment {
     #[inline(always)]
     /// Respond to the new CPU state (do nothing, execute an SVC or enter
     /// debugging) and decide what to do next.
-    fn handle_cpu_state(
+    async fn handle_cpu_state(
         &mut self,
         state: cpu::CpuState,
         initial_thread: ThreadID,
@@ -556,6 +668,8 @@ impl Environment {
                         if !self.threads[self.current_thread].in_start_routine {
                             panic!("Non-exiting thread {} exited!", self.current_thread);
                         } else {
+                            // TODO: Implement early thread exit (pthread_exit)
+                            assert!(root);
                             // Secondary thread finished starting.
                             log_dbg!(
                                 "Thread {} finished start routine and became inactive, {}",
@@ -610,7 +724,7 @@ impl Environment {
                             let was_in_host_function =
                                 self.threads[self.current_thread].in_host_function;
                             self.threads[self.current_thread].in_host_function = true;
-                            f.call_from_guest(self);
+                            f.call_from_guest(self).await;
                             self.threads[self.current_thread].in_host_function =
                                 was_in_host_function;
                             // Host function might have put the thread to sleep.
@@ -633,18 +747,11 @@ impl Environment {
         }
     }
 
-    fn run_inner(&mut self, root: bool) {
+    async fn run_iter(&mut self, root: bool) {
         let initial_thread = self.current_thread;
         assert!(self.threads[initial_thread].active);
         assert!(self.threads[initial_thread].context.is_none());
-
         loop {
-            // We need to poll for events occasionally during CPU execution so
-            // that the host OS doesn't consider touchHLE unresponsive.
-            // This is not free so we should avoid doing it too often.
-            // 100,000 ticks is an arbitrary number.
-            self.window.poll_for_events(&self.options);
-
             let mut ticks = if self.threads[self.current_thread].is_blocked() {
                 // The current thread might be asleep, in which case we want to
                 // immediately switch to another thread. This only happens when
@@ -663,7 +770,7 @@ impl Environment {
                         Some(&mut ticks)
                     },
                 );
-                match self.handle_cpu_state(state, initial_thread, root) {
+                match self.handle_cpu_state(state, initial_thread, root).await {
                     ThreadNextAction::Continue => {
                         if step_and_debug {
                             step_and_debug = self.gdb_server.as_mut().unwrap().wait_for_debugger(
@@ -673,109 +780,30 @@ impl Environment {
                             );
                         }
                     }
-                    ThreadNextAction::Yield => break,
+                    ThreadNextAction::Yield => self.yield_thread().await,
                     ThreadNextAction::ReturnToHost => return,
                     ThreadNextAction::DebugCpuError(e) => {
                         step_and_debug = self.debug_cpu_error(e);
                     }
                 }
             }
-
-            loop {
-                // Try to find a new thread to execute, starting with the thread
-                // following the one currently executing.
-                let mut suitable_thread: Option<ThreadID> = None;
-                let mut next_awakening: Option<Instant> = None;
-                let mut mutex_to_relock: Option<HostMutexId> = None;
-                for i in 0..self.threads.len() {
-                    let i = (self.current_thread + 1 + i) % self.threads.len();
-                    let candidate = &mut self.threads[i];
-
-                    if !candidate.active || candidate.in_host_function {
-                        continue;
-                    }
-                    match candidate.blocked_by {
-                        ThreadBlock::Sleeping(sleeping_until) => {
-                            if sleeping_until <= Instant::now() {
-                                log_dbg!("Thread {} finished sleeping.", i);
-                                candidate.blocked_by = ThreadBlock::NotBlocked;
-                                suitable_thread = Some(i);
-                                break;
-                            } else {
-                                next_awakening = match next_awakening {
-                                    None => Some(sleeping_until),
-                                    Some(other) => Some(other.min(sleeping_until)),
-                                };
-                            }
-                        }
-                        ThreadBlock::Mutex(mutex_id) => {
-                            if !host_mutex_is_locked(self, mutex_id) {
-                                log_dbg!("Thread {} was unblocked due to mutex #{} unlocking, relocking mutex.", i, mutex_id);
-                                self.threads[i].blocked_by = ThreadBlock::NotBlocked;
-                                suitable_thread = Some(i);
-                                mutex_to_relock = Some(mutex_id);
-                                break;
-                            }
-                        }
-                        ThreadBlock::Joining(joinee_thread, ptr) => {
-                            if !self.threads[joinee_thread].active {
-                                log_dbg!(
-                                    "Thread {} joining with now finished thread {}.",
-                                    self.current_thread,
-                                    joinee_thread
-                                );
-                                // Write the return valiue, unless the pointer to write to is null.
-                                if !ptr.is_null() {
-                                    self.mem.write(
-                                        ptr,
-                                        self.threads[joinee_thread].return_value.unwrap(),
-                                    );
-                                }
-                                self.threads[i].blocked_by = ThreadBlock::NotBlocked;
-                                suitable_thread = Some(i);
-                                break;
-                            }
-                        }
-                        ThreadBlock::DeferredReturn => {
-                            if i == initial_thread {
-                                log_dbg!("Thread {} is now able to return, returning", i);
-                                self.threads[i].blocked_by = ThreadBlock::NotBlocked;
-                                // Thread is now top of call stack, should return
-                                self.switch_thread(i);
-                                return;
-                            }
-                        }
-                        ThreadBlock::NotBlocked => {
-                            suitable_thread = Some(i);
-                            break;
-                        }
-                    }
-                }
-
-                // There's a suitable thread we can switch to immediately.
-                if let Some(suitable_thread) = suitable_thread {
-                    if suitable_thread != self.current_thread {
-                        self.switch_thread(suitable_thread);
-                    }
-                    if let Some(mutex_id) = mutex_to_relock {
-                        host_mutex_relock_unblocked(self, mutex_id);
-                    }
-                    break;
-                // All suitable threads are blocked and at least one is asleep.
-                // Sleep until one of them wakes up.
-                } else if let Some(next_awakening) = next_awakening {
-                    let duration = next_awakening.duration_since(Instant::now());
-                    log_dbg!("All threads blocked/asleep, sleeping for {:?}.", duration);
-                    std::thread::sleep(duration);
-                    // Try again, there should be some thread awake now (or
-                    // there will be soon, since timing is approximate).
-                    continue;
-                } else {
-                    // This should hopefully not happen, but if a thread is blocked on another
-                    // thread waiting for a deferred return, it could.
-                    panic!("No active threads, program has deadlocked!");
-                }
-            }
+            self.yield_thread().await;
         }
+    }
+    /// Yield current thread. All functions that yield should do so via this function, not by
+    /// awaiting a future directly.
+    async fn yield_thread(&mut self) {
+
+        let inner_swap = self.swapper.take();
+        {
+            let mut other_env = inner_swap.as_ref().unwrap().borrow_mut();
+            std::mem::swap(self, &mut *other_env);
+        }
+        YieldFuture::new().await;
+        {
+            let mut other_env = inner_swap.as_ref().unwrap().borrow_mut();
+            std::mem::swap(self, &mut *other_env);
+        }
+        self.swapper = inner_swap;
     }
 }

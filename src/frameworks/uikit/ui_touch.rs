@@ -5,6 +5,8 @@
  */
 //! `UITouch`.
 
+use touchHLE_proc_macros::boxify;
+
 use super::ui_event;
 use crate::frameworks::core_graphics::{CGFloat, CGPoint, CGRect};
 use crate::frameworks::foundation::{NSTimeInterval, NSUInteger};
@@ -49,7 +51,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())dealloc {
     let &mut UITouchHostObject { view, .. } = env.objc.borrow_mut(this);
-    release(env, view);
+    release(env, view).await;
     env.objc.dealloc_object(this, &mut env.mem)
 }
 
@@ -60,7 +62,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     } else {
         // FIXME, see below
         // Note: also change touchesForView: on UIEvent
-        resolve_point_in_view(env, that_view, location).unwrap()
+        resolve_point_in_view(env, that_view, location).await.unwrap()
     }
 }
 - (CGPoint)previousLocationInView:(id)that_view { // UIView*
@@ -70,7 +72,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     } else {
         // FIXME, see below
         // Note: also change touchesForView: on UIEvent
-        resolve_point_in_view(env, that_view, previous_location).unwrap()
+        resolve_point_in_view(env, that_view, previous_location).await.unwrap()
     }
 }
 
@@ -90,7 +92,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 };
 
-pub fn resolve_point_in_view(env: &mut Environment, view: id, point: CGPoint) -> Option<CGPoint> {
+pub async fn resolve_point_in_view(env: &mut Environment, view: id, point: CGPoint) -> Option<CGPoint> {
     let (expected_width, expected_height) = env.window.size_unrotated_unscaled();
     let expected_width = expected_width as CGFloat;
     let expected_height = expected_height as CGFloat;
@@ -111,7 +113,7 @@ pub fn resolve_point_in_view(env: &mut Environment, view: id, point: CGPoint) ->
     })
 }
 
-fn find_view_for_touch(env: &mut Environment, point: CGPoint) -> Option<id> {
+async fn find_view_for_touch(env: &mut Environment, point: CGPoint) -> Option<id> {
     // FIXME: This is a massive hack that is only going to work for apps that
     // have a single view which handles all touch inputs. We should eventually
     // implement the proper responder chain.
@@ -129,7 +131,7 @@ fn find_view_for_touch(env: &mut Environment, point: CGPoint) -> Option<id> {
         // FIXME: This is an even bigger hack, it is assuming there is a single
         // view with the same size as the screen, and can't account for
         // the view hierarchy's effects on the co-ordinate system!
-        if resolve_point_in_view(env, view, point).is_none() {
+        if resolve_point_in_view(env, view, point).await.is_none() {
             continue;
         }
 
@@ -142,12 +144,13 @@ fn find_view_for_touch(env: &mut Environment, point: CGPoint) -> Option<id> {
 }
 
 /// [super::handle_events] will forward touch events to this function.
-pub fn handle_event(env: &mut Environment, event: Event) {
+#[boxify]
+pub async fn handle_event(env: &mut Environment, event: Event) {
     match event {
         Event::TouchDown(coords) => {
             if env.framework_state.uikit.ui_touch.current_touch.is_some() {
                 log!("Warning: New touch initiated but current touch did not end yet, treating as movement.");
-                return handle_event(env, Event::TouchMove(coords));
+                return handle_event(env, Event::TouchMove(coords)).await;
             }
 
             log_dbg!("Touch down: {:?}", coords);
@@ -157,7 +160,7 @@ pub fn handle_event(env: &mut Environment, event: Event) {
                 y: coords.1,
             };
 
-            let Some(view) = find_view_for_touch(env, location) else {
+            let Some(view) = find_view_for_touch(env, location).await else {
                 return;
             };
 
@@ -171,21 +174,21 @@ pub fn handle_event(env: &mut Environment, event: Event) {
             let timestamp: NSTimeInterval = msg_class![env; NSProcessInfo systemUptime];
 
             let new_touch: id = msg_class![env; UITouch alloc];
-            retain(env, view);
+            retain(env, view).await;
             *env.objc.borrow_mut(new_touch) = UITouchHostObject {
                 view,
                 location,
                 previous_location: location,
                 timestamp,
             };
-            autorelease(env, new_touch);
+            autorelease(env, new_touch).await;
 
             env.framework_state.uikit.ui_touch.current_touch = Some(new_touch);
-            retain(env, new_touch);
+            retain(env, new_touch).await;
 
             let touches: id = msg_class![env; NSSet setWithObject:new_touch];
-            let event = ui_event::new_event(env, touches, view);
-            autorelease(env, event);
+            let event = ui_event::new_event(env, touches, view).await;
+            autorelease(env, event).await;
 
             log_dbg!(
                 "Sending [{:?} touchesBegan:{:?} withEvent:{:?}]",
@@ -195,7 +198,7 @@ pub fn handle_event(env: &mut Environment, event: Event) {
             );
             let _: () = msg![env; view touchesBegan:touches withEvent:event];
 
-            release(env, pool);
+            release(env, pool).await;
         }
         Event::TouchMove(coords) => {
             let Some(touch) = env.framework_state.uikit.ui_touch.current_touch else {
@@ -221,8 +224,8 @@ pub fn handle_event(env: &mut Environment, event: Event) {
             let pool: id = msg_class![env; NSAutoreleasePool new];
 
             let touches: id = msg_class![env; NSSet setWithObject:touch];
-            let event = ui_event::new_event(env, touches, view);
-            autorelease(env, event);
+            let event = ui_event::new_event(env, touches, view).await;
+            autorelease(env, event).await;
 
             log_dbg!(
                 "Sending [{:?} touchesMoved:{:?} withEvent:{:?}]",
@@ -232,7 +235,7 @@ pub fn handle_event(env: &mut Environment, event: Event) {
             );
             let _: () = msg![env; view touchesMoved:touches withEvent:event];
 
-            release(env, pool);
+            release(env, pool).await;
         }
         Event::TouchUp(coords) => {
             let Some(touch) = env.framework_state.uikit.ui_touch.current_touch else {
@@ -258,11 +261,11 @@ pub fn handle_event(env: &mut Environment, event: Event) {
             let pool: id = msg_class![env; NSAutoreleasePool new];
 
             let touches: id = msg_class![env; NSSet setWithObject:touch];
-            let event = ui_event::new_event(env, touches, view);
-            autorelease(env, event);
+            let event = ui_event::new_event(env, touches, view).await;
+            autorelease(env, event).await;
 
             env.framework_state.uikit.ui_touch.current_touch = None;
-            release(env, touch); // only owner now should be the NSSet
+            release(env, touch).await; // only owner now should be the NSSet
 
             log_dbg!(
                 "Sending [{:?} touchesEnded:{:?} withEvent:{:?}]",
@@ -272,7 +275,7 @@ pub fn handle_event(env: &mut Environment, event: Event) {
             );
             let _: () = msg![env; view touchesEnded:touches withEvent:event];
 
-            release(env, pool);
+            release(env, pool).await;
         }
         _ => unreachable!(),
     }

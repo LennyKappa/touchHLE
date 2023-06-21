@@ -46,6 +46,7 @@ mod objc;
 mod options;
 mod paths;
 mod stack;
+mod thread_support;
 mod window;
 
 // These are very frequently used and used to be in this module, so they are
@@ -361,7 +362,6 @@ pub fn main<T: Iterator<Item = String>>(mut args: T) -> Result<(), String> {
         assert!(parse_result == Ok(true));
     }
 
-    let mut env = Environment::new(bundle, fs, options)?;
-    env.run();
+    Environment::run(bundle, fs, options)?;
     Ok(())
 }

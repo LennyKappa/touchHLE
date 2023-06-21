@@ -35,8 +35,8 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())dealloc {
     let &UIEventHostObject { touches, view } = env.objc.borrow(this);
-    release(env, touches);
-    release(env, view);
+    release(env, touches).await;
+    release(env, view).await;
 }
 
 - (id)touchesForView:(id)view {
@@ -57,10 +57,10 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 /// For use by [super::ui_touch]: create a `UIEvent` with a set of `UITouch*`
 /// and the view it was originally sent to.
-pub(super) fn new_event(env: &mut Environment, touches: id, view: id) -> id {
+pub(super) async fn new_event(env: &mut Environment, touches: id, view: id) -> id {
     let event: id = msg_class![env; UIEvent alloc];
-    retain(env, touches);
-    retain(env, view);
+    retain(env, touches).await;
+    retain(env, view).await;
     let borrow = env.objc.borrow_mut::<UIEventHostObject>(event);
     borrow.touches = touches;
     borrow.view = view;

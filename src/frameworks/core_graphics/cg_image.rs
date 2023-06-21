@@ -5,6 +5,8 @@
  */
 //! `CGImage.h`
 
+use touchHLE_proc_macros::boxify;
+
 use super::cg_color_space::{kCGColorSpaceGenericRGB, CGColorSpaceCreateWithName, CGColorSpaceRef};
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::frameworks::core_foundation::{CFRelease, CFRetain, CFTypeRef};
@@ -12,7 +14,7 @@ use crate::frameworks::foundation::ns_string;
 use crate::image::Image;
 use crate::mem::GuestUSize;
 use crate::objc::{objc_classes, ClassExports, HostObject, ObjC};
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 
 pub type CGImageAlphaInfo = u32;
 pub const kCGImageAlphaNone: CGImageAlphaInfo = 0;
@@ -66,9 +68,10 @@ pub fn CGImageRelease(env: &mut Environment, c: CGImageRef) {
         CFRelease(env, c);
     }
 }
-pub fn CGImageRetain(env: &mut Environment, c: CGImageRef) -> CGImageRef {
+#[boxify]
+pub async fn CGImageRetain(env: &mut Environment, c: CGImageRef) -> CGImageRef {
     if !c.is_null() {
-        CFRetain(env, c)
+        CFRetain(env, c).await
     } else {
         c
     }
@@ -95,12 +98,13 @@ fn CGImageGetAlphaInfo(_env: &mut Environment, _image: CGImageRef) -> CGImageAlp
     kCGImageAlphaLast
 }
 
-fn CGImageGetColorSpace(env: &mut Environment, _image: CGImageRef) -> CGColorSpaceRef {
+#[boxify]
+async fn CGImageGetColorSpace(env: &mut Environment, _image: CGImageRef) -> CGColorSpaceRef {
     // Caller must release
     // FIXME: what if a loaded image is not sRGB?
 
-    let srgb_name = ns_string::get_static_str(env, kCGColorSpaceGenericRGB);
-    CGColorSpaceCreateWithName(env, srgb_name)
+    let srgb_name = ns_string::get_static_str(env, kCGColorSpaceGenericRGB).await;
+    CGColorSpaceCreateWithName(env, srgb_name).await
 }
 
 fn CGImageGetWidth(env: &mut Environment, image: CGImageRef) -> GuestUSize {
@@ -122,9 +126,9 @@ fn CGImageGetHeight(env: &mut Environment, image: CGImageRef) -> GuestUSize {
 
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CGImageRelease(_)),
-    export_c_func!(CGImageRetain(_)),
+    export_c_func_async!(CGImageRetain(_)),
     export_c_func!(CGImageGetAlphaInfo(_)),
-    export_c_func!(CGImageGetColorSpace(_)),
+    export_c_func_async!(CGImageGetColorSpace(_)),
     export_c_func!(CGImageGetWidth(_)),
     export_c_func!(CGImageGetHeight(_)),
 ];

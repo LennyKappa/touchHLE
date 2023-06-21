@@ -50,7 +50,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let already_unarchived = std::mem::take(&mut host_obj.already_unarchived);
 
     for &object in already_unarchived.iter().flatten() {
-        release(env, object);
+        release(env, object).await;
     }
 
     env.objc.dealloc_object(this, &mut env.mem)
@@ -76,11 +76,11 @@ pub const CLASSES: ClassExports = objc_classes! {
         }
     }.as_dictionary().unwrap();
     let next_uid = scope[&key].as_uid().copied().unwrap();
-    let object = unarchive_key(env, this, next_uid);
+    let object = unarchive_key(env, this, next_uid).await;
 
     // on behalf of the caller
-    retain(env, object);
-    autorelease(env, object)
+    retain(env, object).await;
+    autorelease(env, object).await
 }
 
 // TODO: add more decode methods
@@ -123,7 +123,7 @@ pub fn init_for_reading_with_data(env: &mut Environment, unarchiver: id, data: &
 ///
 /// The object returned is retained only by the archiver. Remember to retain and
 /// possibly autorelease it as appropriate.
-fn unarchive_key(env: &mut Environment, unarchiver: id, key: Uid) -> id {
+async fn unarchive_key(env: &mut Environment, unarchiver: id, key: Uid) -> id {
     let host_obj = borrow_host_obj(env, unarchiver);
     if let Some(existing) = host_obj.already_unarchived[key.get() as usize] {
         return existing;
@@ -172,7 +172,7 @@ fn unarchive_key(env: &mut Environment, unarchiver: id, key: Uid) -> id {
         }
         Value::String(s) => {
             let s = s.to_string();
-            from_rust_string(env, s)
+            from_rust_string(env, s).await
         }
         _ => unimplemented!("Unarchive: {:#?}", item),
     };
@@ -185,7 +185,7 @@ fn unarchive_key(env: &mut Environment, unarchiver: id, key: Uid) -> id {
 /// Shortcut for use by `[_touchHLE_NSArray initWithCoder:]`.
 ///
 /// The objects are to be considered retained by the `Vec`.
-pub fn decode_current_array(env: &mut Environment, unarchiver: id) -> Vec<id> {
+pub async fn decode_current_array(env: &mut Environment, unarchiver: id) -> Vec<id> {
     let keys: Vec<Uid> = {
         let host_obj = borrow_host_obj(env, unarchiver);
         let objects = host_obj.plist["$objects"].as_array().unwrap();
@@ -197,12 +197,13 @@ pub fn decode_current_array(env: &mut Environment, unarchiver: id) -> Vec<id> {
             .map(|value| value.as_uid().copied().unwrap())
             .collect()
     };
-
-    keys.into_iter()
-        .map(|key| {
-            let new_object = unarchive_key(env, unarchiver, key);
-            // object is retained by the Vec
-            retain(env, new_object)
-        })
-        .collect()
+    
+    let mut objs = Vec::new();
+    // Can't use map here due to the async 
+    for key in keys {
+        
+            let new_object = unarchive_key(env, unarchiver, key).await;
+            objs.push(retain(env, new_object).await);
+    }
+    objs
 }

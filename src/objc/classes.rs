@@ -73,6 +73,7 @@ impl HostObject for FakeClass {}
 ///
 /// The name, field names and field layout are based on what Ghidra outputs.
 #[repr(C, packed)]
+#[allow(non_camel_case_types)]
 struct class_t {
     isa: Class, // note that this matches objc_object
     superclass: Class,
@@ -86,6 +87,7 @@ unsafe impl SafeRead for class_t {}
 ///
 /// The name, field names and field layout are based on what Ghidra's output.
 #[repr(C, packed)]
+#[allow(non_camel_case_types)]
 struct class_rw_t {
     _flags: u32,
     instance_start: GuestUSize,
@@ -104,6 +106,7 @@ unsafe impl SafeRead for class_rw_t {}
 ///
 /// The name, field names and field layout are based on what Ghidra outputs.
 #[repr(C, packed)]
+#[allow(non_camel_case_types)]
 struct category_t {
     name: ConstPtr<u8>,
     class: Class,
@@ -159,10 +162,11 @@ macro_rules! _objc_method {
         $(, $ty:ty, $arg:ident)*
         $(, ...$va_arg:ident: $va_type:ty)?
     ) => {
-        // The closure must be explicitly casted because a bare closure defaults
-        // to a different type than a pure fn pointer, which is the type that
-        // HostIMP and CallFromGuest are implemented on.
-        &((|
+        // IMM: AAJDNSKDNKJ
+        // wait maybe we could pass symbols here that would be dope
+        &({#[touchHLE_proc_macros::boxify]
+            #[allow(unused_braces)]
+            async fn _objc_method_impl(
             #[allow(unused_variables)]
             $env: &mut $crate::Environment,
             #[allow(unused_variables)]
@@ -170,14 +174,9 @@ macro_rules! _objc_method {
             #[allow(unused_variables)]
             $_cmd: $crate::objc::SEL,
             $($arg: $ty,)*
-            $(#[allow(unused_mut)] mut $va_arg: $va_type,)?
-        | -> $retty {$block}) as fn(
-            &mut $crate::Environment,
-            $crate::objc::id,
-            $crate::objc::SEL,
-            $($ty,)*
-            $($va_type,)?
-        ) -> $retty)
+            $($va_arg: $va_type,)?
+        ) -> $retty{$block}
+        _objc_method_impl as for<'a> fn (&'a mut $crate::Environment, $crate::objc::id, $crate::objc::SEL, $($ty,)* $($va_arg: $va_type,)?) -> std::pin::Pin<Box<dyn std::future::Future<Output = _> + 'a>>})
     }
 }
 

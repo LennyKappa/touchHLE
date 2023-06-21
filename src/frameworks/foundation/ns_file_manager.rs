@@ -5,13 +5,15 @@
  */
 //! `NSFileManager` etc.
 
+use touchHLE_proc_macros::boxify;
+
 use super::{ns_array, ns_string, NSUInteger};
-use crate::dyld::{export_c_func, FunctionExports};
+use crate::dyld::FunctionExports;
 use crate::fs::{GuestPath, GuestPathBuf};
 use crate::objc::{
     autorelease, id, msg, msg_class, nil, objc_classes, release, ClassExports, HostObject,
 };
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 
 type NSSearchPathDirectory = NSUInteger;
 const NSDocumentDirectory: NSSearchPathDirectory = 9;
@@ -19,7 +21,8 @@ const NSDocumentDirectory: NSSearchPathDirectory = 9;
 type NSSearchPathDomainMask = NSUInteger;
 const NSUserDomainMask: NSSearchPathDomainMask = 1;
 
-fn NSSearchPathForDirectoriesInDomains(
+#[boxify]
+async fn NSSearchPathForDirectoriesInDomains(
     env: &mut Environment,
     directory: NSSearchPathDirectory,
     domain_mask: NSSearchPathDomainMask,
@@ -31,20 +34,21 @@ fn NSSearchPathForDirectoriesInDomains(
     assert!(expand_tilde);
 
     let dir = env.fs.home_directory().join("Documents");
-    let dir = ns_string::from_rust_string(env, String::from(dir));
-    let dir_list = ns_array::from_vec(env, vec![dir]);
-    autorelease(env, dir_list)
+    let dir = ns_string::from_rust_string(env, String::from(dir)).await;
+    let dir_list = ns_array::from_vec(env, vec![dir]).await;
+    autorelease(env, dir_list).await
 }
 
-fn NSHomeDirectory(env: &mut Environment) -> id {
+#[boxify]
+async fn NSHomeDirectory(env: &mut Environment) -> id {
     let dir = env.fs.home_directory();
-    let dir = ns_string::from_rust_string(env, String::from(dir.as_str()));
-    autorelease(env, dir)
+    let dir = ns_string::from_rust_string(env, String::from(dir.as_str())).await;
+    autorelease(env, dir).await
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(NSHomeDirectory()),
-    export_c_func!(NSSearchPathForDirectoriesInDomains(_, _, _)),
+    export_c_func_async!(NSHomeDirectory()),
+    export_c_func_async!(NSSearchPathForDirectoriesInDomains(_, _, _)),
 ];
 
 #[derive(Default)]
@@ -69,7 +73,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     } else {
         let new: id = msg![env; this new];
         env.framework_state.foundation.ns_file_manager.default_manager = Some(new);
-        autorelease(env, new)
+        autorelease(env, new).await
     }
 }
 
@@ -97,7 +101,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     if data == nil {
         let empty: id = msg_class![env; NSData new];
         let res: bool = msg![env; empty writeToFile:path atomically:false];
-        release(env, empty);
+        release(env, empty).await;
         res
     } else {
         msg![env; data writeToFile:path atomically:false]
@@ -114,7 +118,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     });
     let class = env.objc.get_known_class("NSDirectoryEnumerator", &mut env.mem);
     let enumerator = env.objc.alloc_object(class, host_object, &mut env.mem);
-    autorelease(env, enumerator)
+    autorelease(env, enumerator).await
 }
 
 @end
@@ -123,7 +127,11 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (id)nextObject {
     let host_obj = env.objc.borrow_mut::<NSDirectoryEnumeratorHostObject>(this);
-    host_obj.iterator.next().map_or(nil, |s| ns_string::from_rust_string(env, String::from(s)))
+    // No async closures :(
+    match host_obj.iterator.next(){
+        Some(s) => ns_string::from_rust_string(env, String::from(s)).await,
+        None => nil,
+    }
 }
 
 @end

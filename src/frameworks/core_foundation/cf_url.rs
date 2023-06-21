@@ -8,18 +8,21 @@
 //! This is toll-free bridged to `NSURL` in Apple's implementation. Here it is
 //! the same type.
 
+use touchHLE_proc_macros::boxify;
+
 use super::cf_allocator::{kCFAllocatorDefault, CFAllocatorRef};
 use super::CFIndex;
-use crate::dyld::{export_c_func, FunctionExports};
+use crate::dyld::FunctionExports;
 use crate::frameworks::foundation::ns_string::NSUTF8StringEncoding;
 use crate::frameworks::foundation::NSUInteger;
 use crate::mem::{ConstPtr, MutPtr};
 use crate::objc::{id, msg, msg_class};
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 
 pub type CFURLRef = super::CFTypeRef;
 
-pub fn CFURLGetFileSystemRepresentation(
+#[boxify]
+pub async fn CFURLGetFileSystemRepresentation(
     env: &mut Environment,
     url: CFURLRef,
     resolve_against_base: bool,
@@ -33,7 +36,8 @@ pub fn CFURLGetFileSystemRepresentation(
                                     maxLength:buffer_size]
 }
 
-pub fn CFURLCreateFromFileSystemRepresentation(
+#[boxify]
+pub async fn CFURLCreateFromFileSystemRepresentation(
     env: &mut Environment,
     allocator: CFAllocatorRef,
     buffer: ConstPtr<u8>,
@@ -54,6 +58,6 @@ pub fn CFURLCreateFromFileSystemRepresentation(
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(CFURLGetFileSystemRepresentation(_, _, _, _)),
-    export_c_func!(CFURLCreateFromFileSystemRepresentation(_, _, _, _)),
+    export_c_func_async!(CFURLGetFileSystemRepresentation(_, _, _, _)),
+    export_c_func_async!(CFURLCreateFromFileSystemRepresentation(_, _, _, _)),
 ];

@@ -8,6 +8,8 @@
 //! Resources:
 //! - Apple's [Threading Programming Guide](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/Multithreading/Introduction/Introduction.html)
 
+use touchHLE_proc_macros::boxify;
+
 use super::{ns_string, ns_timer};
 use crate::dyld::{ConstantExports, HostConstant};
 use crate::frameworks::audio_toolbox::audio_queue::{handle_audio_queue, AudioQueueRef};
@@ -89,13 +91,13 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())addTimer:(id)timer // NSTimer*
        forMode:(NSRunLoopMode)mode {
-    let default_mode = ns_string::get_static_str(env, NSDefaultRunLoopMode);
+    let default_mode = ns_string::get_static_str(env, NSDefaultRunLoopMode).await;
     // TODO: handle other modes
     assert!(msg![env; mode isEqualToString:default_mode]);
 
     log_dbg!("Adding timer {:?} to run loop {:?}", timer, this);
 
-    retain(env, timer);
+    retain(env, timer).await;
 
     let host_object = env.objc.borrow_mut::<NSRunLoopHostObject>(this);
     assert!(!host_object.timers.contains(&timer)); // TODO: what do we do here?
@@ -134,7 +136,7 @@ pub fn remove_audio_queue(env: &mut Environment, run_loop: id, queue: AudioQueue
 }
 
 /// For use by NSTimer so it can remove itself once it's invalidated.
-pub(super) fn remove_timer(env: &mut Environment, run_loop: id, timer: id) {
+pub(super) async fn remove_timer(env: &mut Environment, run_loop: id, timer: id) {
     let NSRunLoopHostObject { timers, .. } = env.objc.borrow_mut(run_loop);
 
     let mut i = 0;
@@ -149,11 +151,12 @@ pub(super) fn remove_timer(env: &mut Environment, run_loop: id, timer: id) {
     }
     assert!(release_count == 1); // TODO?
     for _ in 0..release_count {
-        release(env, timer);
+        release(env, timer).await;
     }
 }
 
-fn run_run_loop(env: &mut Environment, run_loop: id) {
+#[boxify]
+async fn run_run_loop(env: &mut Environment, run_loop: id) {
     log_dbg!("Entering run loop {:?} (indefinitely)", run_loop);
 
     // Temporary vectors used to track things without needing a reference to the
@@ -172,14 +175,14 @@ fn run_run_loop(env: &mut Environment, run_loop: id) {
 
         env.window.poll_for_events(&env.options);
 
-        let next_due = uikit::handle_events(env);
+        let next_due = uikit::handle_events(env).await;
         limit_sleep_time(&mut sleep_until, next_due);
 
         assert!(timers_tmp.is_empty());
         timers_tmp.extend_from_slice(&env.objc.borrow::<NSRunLoopHostObject>(run_loop).timers);
 
         for timer in timers_tmp.drain(..) {
-            let next_due = ns_timer::handle_timer(env, timer);
+            let next_due = ns_timer::handle_timer(env, timer).await;
             limit_sleep_time(&mut sleep_until, next_due);
         }
 
@@ -191,10 +194,10 @@ fn run_run_loop(env: &mut Environment, run_loop: id) {
         );
 
         for audio_queue in audio_queues_tmp.drain(..) {
-            handle_audio_queue(env, audio_queue);
+            handle_audio_queue(env, audio_queue).await;
         }
 
-        media_player::handle_players(env);
+        media_player::handle_players(env).await;
 
         // Unfortunately, touchHLE has to poll for certain things repeatedly;
         // it can't just wait until the next event appears.
@@ -211,6 +214,6 @@ fn run_run_loop(env: &mut Environment, run_loop: id) {
         // or until the next scheduled event, whichever is sooner. iPhone OS
         // apps can't do more than 60fps so this should be fine.
         let limit = Duration::from_millis(1000 / 60);
-        env.sleep(sleep_until.map_or(limit, |i| i.duration_since(Instant::now()).min(limit)), false);
+        env.sleep(sleep_until.map_or(limit, |i| i.duration_since(Instant::now()).min(limit)), false).await;
     }
 }

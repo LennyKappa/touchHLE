@@ -26,7 +26,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
-    retain(env, this)
+    retain(env, this).await
 }
 
 @end
@@ -44,7 +44,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithBool:value];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 // TODO: types other than booleans

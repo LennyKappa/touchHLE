@@ -11,6 +11,10 @@
 //!
 //! See also: [crate::mem::SafeRead] and [crate::mem::SafeWrite].
 
+use async_trait::async_trait;
+use std::future::Future;
+use std::pin::Pin;
+
 use crate::cpu::Cpu;
 use crate::mem::{ConstPtr, ConstVoidPtr, GuestUSize, Mem, MutPtr, MutVoidPtr, Ptr, SafeRead};
 use crate::Environment;
@@ -82,7 +86,7 @@ impl GuestFunction {
     ///
     /// See also [CallFromGuest] and [CallFromHost]. The latter is implemented
     /// for [GuestFunction] using this method.
-    pub fn call(self, env: &mut Environment) {
+    pub async fn call(self, env: &mut Environment) {
         log_dbg!("Begin call to guest function {:?}", self);
 
         let (old_pc, old_lr) = env
@@ -104,7 +108,7 @@ impl GuestFunction {
             (old_sp, old_fp)
         };
 
-        env.run_call();
+        env.run_call().await;
 
         env.cpu.branch(old_pc);
         let regs = env.cpu.regs_mut();
@@ -121,7 +125,7 @@ impl GuestFunction {
     /// This is only needed in special applications where having a new stack
     /// frame would be troublesome, e.g. a tail call with stack argument
     /// pass-through.
-    pub fn call_without_pushing_stack_frame(self, env: &mut Environment) {
+    pub async fn call_without_pushing_stack_frame(self, env: &mut Environment) {
         log_dbg!(
             "Begin call to guest function {:?} (no new stack frame)",
             self
@@ -131,7 +135,7 @@ impl GuestFunction {
             .cpu
             .branch_with_link(self, env.dyld.return_to_host_routine());
 
-        env.run_call();
+        env.run_call().await;
 
         env.cpu.branch(old_pc);
         env.cpu.regs_mut()[Cpu::LR] = old_lr.addr_with_thumb_bit();
@@ -165,17 +169,19 @@ impl GuestFunction {
 ///
 /// See also [GuestFunction::call] and
 /// [GuestFunction::call_without_pushing_stack_frame].
+#[async_trait(?Send)]
 pub trait CallFromGuest {
-    fn call_from_guest(&self, env: &mut Environment);
+    async fn call_from_guest(&self, env: &mut Environment);
 }
 
 macro_rules! impl_CallFromGuest {
     ( $($p:tt => $P:ident),* ) => {
+        #[async_trait(?Send)]
         impl<R, $($P),*> CallFromGuest for fn(&mut Environment, $($P),*) -> R
             where R: GuestRet, $($P: GuestArg,)* {
             // ignore warnings for the zero-argument case
             #[allow(unused_variables, unused_mut, clippy::unused_unit)]
-            fn call_from_guest(&self, env: &mut Environment) {
+            async fn call_from_guest(&self, env: &mut Environment) {
                 let mut reg_offset = 0;
                 let regs = env.cpu.regs();
                 let retval_ptr = R::SIZE_IN_MEM.map(|_| {
@@ -194,11 +200,12 @@ macro_rules! impl_CallFromGuest {
                 }
             }
         }
+        #[async_trait(?Send)]
         impl<R, $($P),*> CallFromGuest for fn(&mut Environment, $($P,)* DotDotDot) -> R
             where R: GuestRet, $($P: GuestArg,)* {
             // ignore warnings for the zero-argument case
             #[allow(unused_variables, unused_mut, clippy::unused_unit)]
-            fn call_from_guest(&self, env: &mut Environment) {
+            async fn call_from_guest(&self, env: &mut Environment) {
                 let mut reg_offset = 0;
                 let regs = env.cpu.regs();
                 let retval_ptr = R::SIZE_IN_MEM.map(|_| {
@@ -213,6 +220,58 @@ macro_rules! impl_CallFromGuest {
                 });
                 log_dbg!("CallFromGuest {:?}, ...{:?}", args, va_list);
                 let retval = self(env, $(args.$p,)* va_list);
+                log_dbg!("CallFromGuest => {:?}", retval);
+                if let Some(retval_ptr) = retval_ptr {
+                    retval.to_mem(retval_ptr, &mut env.mem);
+                } else {
+                    retval.to_regs(env.cpu.regs_mut());
+                }
+            }
+        }
+        #[async_trait(?Send)]
+        impl<R, $($P),*> CallFromGuest for fn(&mut Environment, $($P),*) ->  Pin<Box<dyn Future<Output = R> + '_>>
+            where R: GuestRet, $($P: GuestArg,)*{
+            // ignore warnings for the zero-argument case
+            #[allow(unused_variables, unused_mut, clippy::unused_unit)]
+            async fn call_from_guest(&self, env: &mut Environment) {
+                let mut reg_offset = 0;
+                let regs = env.cpu.regs();
+                let retval_ptr = R::SIZE_IN_MEM.map(|_| {
+                    read_next_arg(&mut reg_offset, regs, Ptr::from_bits(regs[Cpu::SP]), &env.mem)
+                });
+                let args: ($($P,)*) = {
+                    ($(read_next_arg::<$P>(&mut reg_offset, regs, Ptr::from_bits(regs[Cpu::SP]), &env.mem),)*)
+                };
+                log_dbg!("CallFromGuest {:?}", args);
+                let retval = self(env, $(args.$p),*).await;
+                log_dbg!("CallFromGuest => {:?}", retval);
+                if let Some(retval_ptr) = retval_ptr {
+                    retval.to_mem(retval_ptr, &mut env.mem);
+                } else {
+                    retval.to_regs(env.cpu.regs_mut());
+                }
+            }
+        }
+        #[async_trait(?Send)]
+        impl<R, $($P),*> CallFromGuest for fn(&mut Environment, $($P,)* DotDotDot) -> Pin<Box<dyn Future<Output = R> + '_>>
+            where R: GuestRet, $($P: GuestArg,)*  {
+            // ignore warnings for the zero-argument case
+            #[allow(unused_variables, unused_mut, clippy::unused_unit)]
+            async fn call_from_guest(&self, env: &mut Environment) {
+                let mut reg_offset = 0;
+                let regs = env.cpu.regs();
+                let retval_ptr = R::SIZE_IN_MEM.map(|_| {
+                    read_next_arg(&mut reg_offset, regs, Ptr::from_bits(regs[Cpu::SP]), &env.mem)
+                });
+                let args: ($($P,)*) = {
+                    ($(read_next_arg::<$P>(&mut reg_offset, regs, Ptr::from_bits(regs[Cpu::SP]), &env.mem),)*)
+                };
+                let va_list = DotDotDot(VaList {
+                    reg_offset,
+                    stack_pointer: Ptr::from_bits(regs[Cpu::SP])
+                });
+                log_dbg!("CallFromGuest {:?}, ...{:?}", args, va_list);
+                let retval = self(env, $(args.$p,)* va_list).await;
                 log_dbg!("CallFromGuest => {:?}", retval);
                 if let Some(retval_ptr) = retval_ptr {
                     retval.to_mem(retval_ptr, &mut env.mem);
@@ -238,17 +297,19 @@ impl_CallFromGuest!(0 => P0, 1 => P1, 2 => P2, 3 => P3, 4 => P4, 5 => P5, 6 => P
 /// This trait represents a guest or host function that can be called from host
 /// code, but using the guest ABI. See [CallFromGuest], which this is the
 /// inverse of.
+#[async_trait(?Send)]
 pub trait CallFromHost<R, P> {
-    fn call_from_host(&self, env: &mut Environment, args: P) -> R;
+    async fn call_from_host(&self, env: &mut Environment, args: P) -> R;
 }
 
 macro_rules! impl_CallFromHost {
     ( $($p:tt => $P:ident),* ) => {
+        #[async_trait(?Send)]
         impl <T, R, $($P),*> CallFromHost<R, ($($P,)*)> for T
-            where T: CallFromGuest, R: GuestRet, $($P: GuestArg,)* {
+            where T: CallFromGuest, R: GuestRet, $(for <'a> $P: GuestArg + 'a,)* {
             // ignore warnings for the zero-argument case
             #[allow(unused_variables, unused_mut, clippy::unused_unit)]
-            fn call_from_host(
+            async fn call_from_host(
                 &self,
                 env: &mut Environment,
                 args: ($($P,)*),
@@ -266,7 +327,7 @@ macro_rules! impl_CallFromHost {
                     regs,
                 );
                 $(write_next_arg::<$P>(&mut reg_offset, regs, &mut env.mem, args.$p);)*
-                self.call_from_guest(env);
+                self.call_from_guest(env).await;
                 let regs = env.cpu.regs_mut(); // reborrow
                 regs[Cpu::SP] = old_sp;
                 if let Some(retval_ptr) = retval_ptr {
@@ -278,11 +339,12 @@ macro_rules! impl_CallFromHost {
             }
         }
 
+        #[async_trait(?Send)]
         impl <R, $($P),*> CallFromHost<R, ($($P,)*)> for GuestFunction
-            where R: GuestRet, $($P: GuestArg,)* {
+            where R: GuestRet, $(for <'a> $P: GuestArg + 'a,)* {
             // ignore warnings for the zero-argument case
             #[allow(unused_variables, unused_mut, clippy::unused_unit)]
-            fn call_from_host(
+            async fn call_from_host(
                 &self,
                 env: &mut Environment,
                 args: ($($P,)*),
@@ -295,7 +357,7 @@ macro_rules! impl_CallFromHost {
                 );
                 let mut reg_offset = 0;
                 $(write_next_arg::<$P>(&mut reg_offset, regs, &mut env.mem, args.$p);)*
-                self.call(env);
+                self.call(env).await;
                 env.cpu.regs_mut()[Cpu::SP] = old_sp;
                 <R as GuestRet>::from_regs(env.cpu.regs())
             }

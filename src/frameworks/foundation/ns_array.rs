@@ -38,7 +38,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
     // TODO: override this once we have NSMutableArray!
-    retain(env, this)
+    retain(env, this).await
 }
 
 @end
@@ -94,7 +94,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     // allocating an NSString here would be inconvenient, so let's just take a
     // shortcut.
     // FIXME: What if it's not an NSKeyedUnarchiver?
-    let objects = ns_keyed_unarchiver::decode_current_array(env, coder);
+    let objects = ns_keyed_unarchiver::decode_current_array(env, coder).await;
     let host_object: &mut ArrayHostObject = env.objc.borrow_mut(this);
     assert!(host_object.array.is_empty());
     host_object.array = objects; // objects are already retained
@@ -106,7 +106,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let array = std::mem::take(&mut host_object.array);
 
     for object in array {
-        release(env, object);
+        release(env, object).await;
     }
 
     env.objc.dealloc_object(this, &mut env.mem)
@@ -139,7 +139,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     let array = std::mem::take(&mut host_object.array);
 
     for object in array {
-        release(env, object);
+        release(env, object).await;
     }
 
     env.objc.dealloc_object(this, &mut env.mem)
@@ -159,13 +159,13 @@ pub const CLASSES: ClassExports = objc_classes! {
 // TODO: more mutation methods
 
 - (())addObject:(id)object {
-    retain(env, object);
+    retain(env, object).await;
     env.objc.borrow_mut::<ArrayHostObject>(this).array.push(object);
 }
 
 - (())removeObjectAtIndex:(NSUInteger)index {
     let object = env.objc.borrow_mut::<ArrayHostObject>(this).array.remove(index as usize);
-    release(env, object)
+    release(env, object).await
 }
 
 @end
@@ -193,7 +193,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 /// Shortcut for host code, roughly equivalent to
 /// `[[NSArray alloc] initWithObjects:count]` but without copying.
 /// The elements should already be "retained by" the `Vec`.
-pub fn from_vec(env: &mut Environment, objects: Vec<id>) -> id {
+pub async fn from_vec(env: &mut Environment, objects: Vec<id>) -> id {
     let array: id = msg_class![env; NSArray alloc];
     env.objc.borrow_mut::<ArrayHostObject>(array).array = objects;
     array

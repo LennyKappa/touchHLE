@@ -49,7 +49,7 @@ pub struct State {
 ///
 /// Returns the next time this function must be called, if any, e.g. the next
 /// time an accelerometer input is due.
-pub fn handle_events(env: &mut Environment) -> Option<Instant> {
+pub async fn handle_events(env: &mut Environment) -> Option<Instant> {
     use crate::window::Event;
 
     loop {
@@ -60,10 +60,10 @@ pub fn handle_events(env: &mut Environment) -> Option<Instant> {
         match event {
             Event::Quit => {
                 echo!("User requested quit, exiting.");
-                ui_application::exit(env);
+                ui_application::exit(env).await;
             }
             Event::TouchDown(..) | Event::TouchMove(..) | Event::TouchUp(..) => {
-                ui_touch::handle_event(env, event)
+                ui_touch::handle_event(env, event).await
             }
             Event::AppWillResignActive => {
                 // Getting this event means touchHLE is becoming inactive, e.g.
@@ -82,14 +82,14 @@ pub fn handle_events(env: &mut Environment) -> Option<Instant> {
                 // loss, nor problems with background resource usage or audio.
                 // TODO: Handle this better.
                 log!("Handling app-will-resign-active event: exiting.");
-                ui_application::exit(env);
+                ui_application::exit(env).await;
             }
             Event::AppWillTerminate => {
                 log!("Handling app-will-terminate event.");
-                ui_application::exit(env);
+                ui_application::exit(env).await;
             }
         }
     }
 
-    ui_accelerometer::handle_accelerometer(env)
+    ui_accelerometer::handle_accelerometer(env).await
 }

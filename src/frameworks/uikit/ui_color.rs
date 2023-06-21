@@ -18,7 +18,7 @@ pub struct State {
     standard_colors: HashMap<SEL, id>,
 }
 
-fn get_standard_color(
+async fn get_standard_color(
     env: &mut Environment,
     sel: SEL,
     r: CGFloat,
@@ -64,36 +64,36 @@ pub const CLASSES: ClassExports = objc_classes! {
              alpha:(CGFloat)a {
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithRed:r green:g blue:b alpha:a];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 + (id)colorWithWhite:(CGFloat)w alpha:(CGFloat)a {
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithWhite: w alpha: a];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
-+ (id)clearColor    { get_standard_color(env, _cmd, 0.0, 0.0, 0.0, 0.0) }
-+ (id)blackColor    { get_standard_color(env, _cmd, 0.0, 0.0, 0.0, 1.0) }
-+ (id)whiteColor    { get_standard_color(env, _cmd, 1.0, 1.0, 1.0, 1.0) }
++ (id)clearColor    { get_standard_color(env, _cmd, 0.0, 0.0, 0.0, 0.0).await }
++ (id)blackColor    { get_standard_color(env, _cmd, 0.0, 0.0, 0.0, 1.0).await }
++ (id)whiteColor    { get_standard_color(env, _cmd, 1.0, 1.0, 1.0, 1.0).await }
 + (id)darkGrayColor {
-    get_standard_color(env, _cmd, 1.0/3.0, 1.0/3.0, 1.0/3.0, 1.0)
+    get_standard_color(env, _cmd, 1.0/3.0, 1.0/3.0, 1.0/3.0, 1.0).await
 }
 + (id)grayColor {
-    get_standard_color(env, _cmd, 1.0/2.0, 1.0/2.0, 1.0/2.0, 1.0)
+    get_standard_color(env, _cmd, 1.0/2.0, 1.0/2.0, 1.0/2.0, 1.0).await
 }
 + (id)lightGrayColor {
-    get_standard_color(env, _cmd, 2.0/3.0, 2.0/3.0, 2.0/3.0, 1.0)
+    get_standard_color(env, _cmd, 2.0/3.0, 2.0/3.0, 2.0/3.0, 1.0).await
 }
-+ (id)blueColor     { get_standard_color(env, _cmd, 0.0, 0.0, 1.0, 1.0) }
-+ (id)brownColor    { get_standard_color(env, _cmd, 0.6, 0.4, 0.2, 1.0) }
-+ (id)cyanColor     { get_standard_color(env, _cmd, 0.0, 1.0, 1.0, 1.0) }
-+ (id)greenColor    { get_standard_color(env, _cmd, 0.0, 1.0, 0.0, 1.0) }
-+ (id)magentaColor  { get_standard_color(env, _cmd, 1.0, 0.0, 1.0, 1.0) }
-+ (id)orangeColor   { get_standard_color(env, _cmd, 1.0, 0.5, 0.0, 1.0) }
-+ (id)purpleColor   { get_standard_color(env, _cmd, 0.5, 0.0, 1.5, 1.0) }
-+ (id)redColor      { get_standard_color(env, _cmd, 1.0, 0.0, 0.0, 1.0) }
-+ (id)yellowColor   { get_standard_color(env, _cmd, 1.0, 1.0, 0.0, 1.0) }
++ (id)blueColor     { get_standard_color(env, _cmd, 0.0, 0.0, 1.0, 1.0).await}
++ (id)brownColor    { get_standard_color(env, _cmd, 0.6, 0.4, 0.2, 1.0).await }
++ (id)cyanColor     { get_standard_color(env, _cmd, 0.0, 1.0, 1.0, 1.0).await }
++ (id)greenColor    { get_standard_color(env, _cmd, 0.0, 1.0, 0.0, 1.0).await }
++ (id)magentaColor  { get_standard_color(env, _cmd, 1.0, 0.0, 1.0, 1.0).await }
++ (id)orangeColor   { get_standard_color(env, _cmd, 1.0, 0.5, 0.0, 1.0).await }
++ (id)purpleColor   { get_standard_color(env, _cmd, 0.5, 0.0, 1.5, 1.0).await }
++ (id)redColor      { get_standard_color(env, _cmd, 1.0, 0.0, 0.0, 1.0).await }
++ (id)yellowColor   { get_standard_color(env, _cmd, 1.0, 1.0, 0.0, 1.0).await }
 
 // TODO: more initializers, set methods, more accessors
 

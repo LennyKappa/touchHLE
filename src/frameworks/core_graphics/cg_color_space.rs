@@ -5,12 +5,14 @@
  */
 //! `CGColorSpace.h`
 
+use touchHLE_proc_macros::boxify;
+
 use crate::dyld::{export_c_func, ConstantExports, FunctionExports, HostConstant};
 use crate::frameworks::core_foundation::cf_string::CFStringRef;
 use crate::frameworks::core_foundation::{CFRelease, CFRetain, CFTypeRef};
 use crate::frameworks::foundation::ns_string;
 use crate::objc::{msg, objc_classes, ClassExports, HostObject};
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 
 pub const CLASSES: ClassExports = objc_classes! {
 
@@ -31,8 +33,9 @@ impl HostObject for CGColorSpaceHostObject {}
 
 pub type CGColorSpaceRef = CFTypeRef;
 
-pub fn CGColorSpaceCreateWithName(env: &mut Environment, name: CFStringRef) -> CGColorSpaceRef {
-    let generic_rgb = ns_string::get_static_str(env, kCGColorSpaceGenericRGB);
+#[boxify]
+pub async fn CGColorSpaceCreateWithName(env: &mut Environment, name: CFStringRef) -> CGColorSpaceRef {
+    let generic_rgb = ns_string::get_static_str(env, kCGColorSpaceGenericRGB).await;
     // TODO: support more color spaces
     assert!(msg![env; name isEqualToString:generic_rgb]);
 
@@ -67,9 +70,10 @@ pub fn CGColorSpaceRelease(env: &mut Environment, cs: CGColorSpaceRef) {
         CFRelease(env, cs);
     }
 }
-pub fn CGColorSpaceRetain(env: &mut Environment, cs: CGColorSpaceRef) -> CGColorSpaceRef {
+#[boxify]
+pub async fn CGColorSpaceRetain(env: &mut Environment, cs: CGColorSpaceRef) -> CGColorSpaceRef {
     if !cs.is_null() {
-        CFRetain(env, cs)
+        CFRetain(env, cs).await
     } else {
         cs
     }
@@ -83,8 +87,8 @@ pub const CONSTANTS: ConstantExports = &[(
 )];
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(CGColorSpaceCreateWithName(_)),
+    export_c_func_async!(CGColorSpaceCreateWithName(_)),
     export_c_func!(CGColorSpaceCreateDeviceRGB()),
-    export_c_func!(CGColorSpaceRetain(_)),
+    export_c_func_async!(CGColorSpaceRetain(_)),
     export_c_func!(CGColorSpaceRelease(_)),
 ];

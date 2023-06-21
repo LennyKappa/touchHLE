@@ -51,7 +51,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (())dealloc {
     let &CALayerHostObject { drawable_properties, .. } = env.objc.borrow(this);
     if drawable_properties != nil {
-        release(env, drawable_properties);
+        release(env, drawable_properties).await;
     }
 }
 

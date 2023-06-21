@@ -1,13 +1,16 @@
 //! `NSLog()`, `NSLogv()`
 
+use touchHLE_proc_macros::boxify;
+
 use super::ns_string;
 use crate::abi::DotDotDot;
-use crate::dyld::{export_c_func, FunctionExports};
+use crate::dyld::FunctionExports;
 use crate::libc::stdio::printf::printf_inner;
 use crate::objc::id;
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 
-fn NSLog(
+#[boxify]
+async fn NSLog(
     env: &mut Environment,
     format: id, // NSString
     args: DotDotDot,
@@ -27,7 +30,7 @@ fn NSLog(
             }
         },
         args.start(),
-    );
+    ).await;
     // TODO: Should we include a timestamp, like the real NSLog?
     echo!(
         "{}[{}] {}",
@@ -37,4 +40,4 @@ fn NSLog(
     );
 }
 
-pub const FUNCTIONS: FunctionExports = &[export_c_func!(NSLog(_, _))];
+pub const FUNCTIONS: FunctionExports = &[export_c_func_async!(NSLog(_, _))];

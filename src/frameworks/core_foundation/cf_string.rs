@@ -8,12 +8,14 @@
 //! This is toll-free bridged to `NSString` in Apple's implementation. Here it
 //! is the same type.
 
+use touchHLE_proc_macros::boxify;
+
 use super::cf_allocator::{kCFAllocatorDefault, CFAllocatorRef};
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::frameworks::foundation::ns_string;
 use crate::mem::ConstPtr;
 use crate::objc::{id, msg, msg_class};
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 
 pub type CFStringRef = super::CFTypeRef;
 
@@ -51,7 +53,8 @@ fn CFStringConvertNSStringEncodingToEncoding(
     }
 }
 
-fn CFStringCreateWithCString(
+#[boxify]
+async fn CFStringCreateWithCString(
     env: &mut Environment,
     allocator: CFAllocatorRef,
     c_string: ConstPtr<u8>,
@@ -66,5 +69,5 @@ fn CFStringCreateWithCString(
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(CFStringConvertEncodingToNSStringEncoding(_)),
     export_c_func!(CFStringConvertNSStringEncodingToEncoding(_)),
-    export_c_func!(CFStringCreateWithCString(_, _, _)),
+    export_c_func_async!(CFStringCreateWithCString(_, _, _)),
 ];

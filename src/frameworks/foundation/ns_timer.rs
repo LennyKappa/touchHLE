@@ -46,8 +46,8 @@ pub const CLASSES: ClassExports = objc_classes! {
     let ns_interval = ns_interval.max(0.0001);
     let rust_interval = Duration::from_secs_f64(ns_interval);
 
-    retain(env, target);
-    retain(env, user_info);
+    retain(env, target).await;
+    retain(env, user_info).await;
 
     let host_object = Box::new(NSTimerHostObject {
         ns_interval,
@@ -71,7 +71,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         user_info,
     );
 
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 + (id)scheduledTimerWithTimeInterval:(NSTimeInterval)interval
@@ -86,7 +86,7 @@ pub const CLASSES: ClassExports = objc_classes! {
                                              repeats:repeats];
 
     let run_loop: id = msg_class![env; NSRunLoop currentRunLoop];
-    let mode: id = ns_string::get_static_str(env, NSDefaultRunLoopMode);
+    let mode: id = ns_string::get_static_str(env, NSDefaultRunLoopMode).await;
     let _: () = msg![env; run_loop addTimer:timer forMode:mode];
 
     timer
@@ -98,8 +98,8 @@ pub const CLASSES: ClassExports = objc_classes! {
         user_info,
         ..
     } = env.objc.borrow(this);
-    release(env, target);
-    release(env, user_info);
+    release(env, target).await;
+    release(env, user_info).await;
     env.objc.dealloc_object(this, &mut env.mem)
 }
 
@@ -122,7 +122,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     // Timer might already be invalid, don't try to remove it twice.
     if env.objc.borrow_mut::<NSTimerHostObject>(this).due_by.take().is_some() {
         let run_loop: id = msg_class![env; NSRunLoop currentRunLoop];
-        ns_run_loop::remove_timer(env, run_loop, this);
+        ns_run_loop::remove_timer(env, run_loop, this).await;
     }
 }
 
@@ -144,7 +144,7 @@ pub(super) fn set_run_loop(env: &mut Environment, timer: id, run_loop: id) {
 /// necessary.
 ///
 /// Returns the next firing time, if any.
-pub(super) fn handle_timer(env: &mut Environment, timer: id) -> Option<Instant> {
+pub(super) async fn handle_timer(env: &mut Environment, timer: id) -> Option<Instant> {
     let &NSTimerHostObject {
         ns_interval,
         rust_interval,
@@ -169,7 +169,7 @@ pub(super) fn handle_timer(env: &mut Environment, timer: id) -> Option<Instant> 
 
     // Timer may be released when it's invalidated, so we need to retain it so
     // it's still around to pass to the timer target.
-    retain(env, timer);
+    retain(env, timer).await;
 
     // Advancing the timer before sending its message seems like a good idea
     // considering this function is potentially re-entrant.
@@ -196,7 +196,7 @@ pub(super) fn handle_timer(env: &mut Environment, timer: id) -> Option<Instant> 
         let advance_by = rust_interval.checked_mul(advance_by).unwrap();
         Some(due_by.checked_add(advance_by).unwrap())
     } else {
-        ns_run_loop::remove_timer(env, run_loop, timer);
+        ns_run_loop::remove_timer(env, run_loop, timer).await;
         None
     };
     env.objc.borrow_mut::<NSTimerHostObject>(timer).due_by = new_due_by;
@@ -211,10 +211,10 @@ pub(super) fn handle_timer(env: &mut Environment, timer: id) -> Option<Instant> 
     let pool: id = msg_class![env; NSAutoreleasePool new];
 
     // Signature should be `- (void)timerDidFire:(NSTimer *)which`.
-    let _: () = msg_send(env, (target, selector, timer));
+    let _: () = msg_send(env, (target, selector, timer)).await;
 
-    release(env, timer);
-    release(env, pool);
+    release(env, timer).await;
+    release(env, pool).await;
 
     new_due_by
 }

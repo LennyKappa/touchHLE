@@ -30,7 +30,7 @@ pub(super) struct DictionaryHostObject {
 }
 impl HostObject for DictionaryHostObject {}
 impl DictionaryHostObject {
-    pub(super) fn lookup(&self, env: &mut Environment, key: id) -> id {
+    pub(super) async fn lookup(&self, env: &mut Environment, key: id) -> id {
         let hash: Hash = msg![env; key hash];
         let Some(collisions) = self.map.get(&hash) else {
             return nil;
@@ -42,15 +42,15 @@ impl DictionaryHostObject {
         }
         nil
     }
-    pub(super) fn insert(&mut self, env: &mut Environment, key: id, value: id, copy_key: bool) {
+    pub(super) async fn insert(&mut self, env: &mut Environment, key: id, value: id, copy_key: bool) {
         let key: id = if copy_key {
             msg![env; key copy]
         } else {
-            retain(env, key)
+            retain(env, key).await
         };
         let hash: Hash = msg![env; key hash];
 
-        let value = retain(env, value);
+        let value = retain(env, value).await;
 
         let Some(collisions) = self.map.get_mut(&hash) else {
             self.map.insert(hash, vec![(key, value)]);
@@ -59,7 +59,7 @@ impl DictionaryHostObject {
         };
         for &mut (candidate_key, ref mut existing_value) in collisions.iter_mut() {
             if candidate_key == key || msg![env; candidate_key isEqualTo:key] {
-                release(env, *existing_value);
+                release(env, *existing_value).await;
                 *existing_value = value;
                 return;
             }
@@ -67,11 +67,11 @@ impl DictionaryHostObject {
         collisions.push((key, value));
         self.count += 1;
     }
-    pub(super) fn release(&mut self, env: &mut Environment) {
+    pub(super) async fn release(&mut self, env: &mut Environment) {
         for collisions in self.map.values() {
             for &(key, value) in collisions {
-                release(env, key);
-                release(env, value);
+                release(env, key).await;
+                release(env, value).await;
             }
         }
     }
@@ -105,13 +105,13 @@ pub const CLASSES: ClassExports = objc_classes! {
     // I should be ashamed, and you should be careful.
     let new_dict: id = msg![env; this alloc];
     let new_dict: id = msg![env; new_dict initWithObjectsAndKeys:first_object];
-    autorelease(env, new_dict)
+    autorelease(env, new_dict).await
 }
 
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
     // TODO: override this once we have NSMutableString!
-    retain(env, this)
+    retain(env, this).await
 }
 
 // TODO
@@ -128,7 +128,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())dealloc {
-    std::mem::take(env.objc.borrow_mut::<DictionaryHostObject>(this)).release(env);
+    std::mem::take(env.objc.borrow_mut::<DictionaryHostObject>(this)).release(env).await;
 
     env.objc.dealloc_object(this, &mut env.mem)
 }
@@ -139,7 +139,7 @@ pub const CLASSES: ClassExports = objc_classes! {
     assert!(first_key != nil); // TODO: raise proper exception
 
     let mut host_object = <DictionaryHostObject as Default>::default();
-    host_object.insert(env, first_key, first_object, /* copy_key: */ true);
+    host_object.insert(env, first_key, first_object, /* copy_key: */ true).await;
 
     loop {
         let object: id = va_args.next(env);
@@ -148,7 +148,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         }
         let key: id = va_args.next(env);
         assert!(key != nil); // TODO: raise proper exception
-        host_object.insert(env, key, object, /* copy_key: */ true);
+        host_object.insert(env, key, object, /* copy_key: */ true).await;
     }
 
     *env.objc.borrow_mut(this) = host_object;
@@ -163,7 +163,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 - (id)objectForKey:(id)key {
     let host_obj: DictionaryHostObject = std::mem::take(env.objc.borrow_mut(this));
-    let res = host_obj.lookup(env, key);
+    let res = host_obj.lookup(env, key).await;
     *env.objc.borrow_mut(this) = host_obj;
     res
 }
@@ -176,12 +176,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 /// `[[NSDictionary alloc] initWithObjectsAndKeys:]` but without variadics and
 /// with a more intuitive argument order. Unlike [super::ns_array::from_vec],
 /// this **does** copy and retain!
-pub fn dict_from_keys_and_objects(env: &mut Environment, keys_and_objects: &[(id, id)]) -> id {
+pub async fn dict_from_keys_and_objects(env: &mut Environment, keys_and_objects: &[(id, id)]) -> id {
     let dict: id = msg_class![env; NSDictionary alloc];
 
     let mut host_object = <DictionaryHostObject as Default>::default();
     for &(key, object) in keys_and_objects {
-        host_object.insert(env, key, object, /* copy_key: */ true);
+        host_object.insert(env, key, object, /* copy_key: */ true).await;
     }
     *env.objc.borrow_mut(dict) = host_object;
 

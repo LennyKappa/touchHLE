@@ -76,7 +76,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         kind: FontKind::Regular,
     };
     let new = env.objc.alloc_object(this, Box::new(host_object), &mut env.mem);
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 + (id)boldSystemFontOfSize:(CGFloat)size {
     // Cache for later use
@@ -88,7 +88,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         kind: FontKind::Bold,
     };
     let new = env.objc.alloc_object(this, Box::new(host_object), &mut env.mem);
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 + (id)italicSystemFontOfSize:(CGFloat)size {
     // Cache for later use
@@ -100,7 +100,7 @@ pub const CLASSES: ClassExports = objc_classes! {
         kind: FontKind::Italic,
     };
     let new = env.objc.alloc_object(this, Box::new(host_object), &mut env.mem);
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 @end

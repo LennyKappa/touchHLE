@@ -36,8 +36,8 @@ pub const CLASSES: ClassExports = objc_classes! {
     } else {
         // TODO: Are there other default keys we need to set?
         let langs_value: id = msg_class![env; NSLocale preferredLanguages];
-        let langs_key: id = ns_string::get_static_str(env, "AppleLanguages");
-        let new = dict_from_keys_and_objects(env, &[(langs_key, langs_value)]);
+        let langs_key: id = ns_string::get_static_str(env, "AppleLanguages").await;
+        let new = dict_from_keys_and_objects(env, &[(langs_key, langs_value)]).await;
         State::get(env).standard_defaults = Some(new);
         new
     }

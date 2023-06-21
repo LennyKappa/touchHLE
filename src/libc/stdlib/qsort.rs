@@ -5,12 +5,15 @@
  */
 //! stdlib's qsort
 
-use crate::abi::{CallFromHost, GuestFunction};
-use crate::dyld::{export_c_func, FunctionExports};
-use crate::mem::MutPtr;
-use crate::Environment;
+use touchHLE_proc_macros::boxify;
 
-fn qsort(
+use crate::abi::{CallFromHost, GuestFunction};
+use crate::dyld::FunctionExports;
+use crate::mem::MutPtr;
+use crate::{Environment, export_c_func_async};
+
+#[boxify]
+async fn qsort(
     env: &mut Environment,
     base: MutPtr<u8>,
     nitems: u32,
@@ -20,10 +23,11 @@ fn qsort(
     if nitems < 2 {
         return;
     }
-    qsort_rec(env, base, nitems, size, compar, 0, nitems - 1);
+    qsort_rec(env, base, nitems, size, compar, 0, nitems - 1).await;
 }
 
-fn qsort_rec(
+#[boxify]
+async fn qsort_rec(
     env: &mut Environment,
     base: MutPtr<u8>,
     nitems: u32,
@@ -39,19 +43,19 @@ fn qsort_rec(
     let pivot = low;
     let mut separator = low + 1;
     for i in low + 1..=hi {
-        if compare(env, base, size, compar, i, pivot) < 0 {
+        if compare(env, base, size, compar, i, pivot).await < 0 {
             swap_slices(env, base, nitems, size, i, separator);
             separator += 1;
         }
     }
     swap_slices(env, base, nitems, size, pivot, separator - 1);
     if separator > 1 {
-        qsort_rec(env, base, nitems, size, compar, low, separator - 2);
+        qsort_rec(env, base, nitems, size, compar, low, separator - 2).await;
     }
-    qsort_rec(env, base, nitems, size, compar, separator, hi);
+    qsort_rec(env, base, nitems, size, compar, separator, hi).await;
 }
 
-fn compare(
+async fn compare(
     env: &mut Environment,
     base: MutPtr<u8>,
     size: u32,
@@ -61,7 +65,7 @@ fn compare(
 ) -> i32 {
     let i_ptr = base + i * size;
     let j_ptr = base + j * size;
-    compar.call_from_host(env, (i_ptr.cast_const(), j_ptr.cast_const()))
+    compar.call_from_host(env, (i_ptr.cast_const(), j_ptr.cast_const())).await
 }
 
 fn swap_slices(env: &mut Environment, base: MutPtr<u8>, nitems: u32, size: u32, i: u32, j: u32) {
@@ -79,4 +83,4 @@ fn swap_slices(env: &mut Environment, base: MutPtr<u8>, nitems: u32, size: u32, 
     left[..size as usize].swap_with_slice(&mut right[..size as usize]);
 }
 
-pub const FUNCTIONS: FunctionExports = &[export_c_func!(qsort(_, _, _, _))];
+pub const FUNCTIONS: FunctionExports = &[export_c_func_async!(qsort(_, _, _, _))];

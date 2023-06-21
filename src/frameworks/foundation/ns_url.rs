@@ -42,20 +42,20 @@ pub const CLASSES: ClassExports = objc_classes! {
 + (id)URLWithString:(id)url { // NSString*
     let new: id = msg![env; this alloc];
     let new: id = msg![env; new initWithString:url];
-    autorelease(env, new)
+    autorelease(env, new).await
 }
 
 - (())dealloc {
     match *env.objc.borrow(this) {
-        NSURLHostObject::FileURL { ns_string } => release(env, ns_string),
-        NSURLHostObject::OtherURL { ns_string } => release(env, ns_string),
+        NSURLHostObject::FileURL { ns_string } => release(env, ns_string).await,
+        NSURLHostObject::OtherURL { ns_string } => release(env, ns_string).await,
     }
     env.objc.dealloc_object(this, &mut env.mem)
 }
 
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
-    retain(env, this)
+    retain(env, this).await
 }
 
 - (id)initFileURLWithPath:(id)path { // NSString*
@@ -120,7 +120,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 /// Shortcut for host code, provides a view of a URL as a path.
 /// TODO: Try to avoid allocating a new GuestPathBuf in more cases.
-pub fn to_rust_path(env: &mut Environment, url: id) -> Cow<'static, GuestPath> {
+pub async fn to_rust_path(env: &mut Environment, url: id) -> Cow<'static, GuestPath> {
     let path_string: id = msg![env; url path];
 
     match to_rust_string(env, path_string) {
