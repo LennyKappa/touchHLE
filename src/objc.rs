@@ -88,6 +88,6 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func_async!(objc_msgSendSuper2(_, _)),
     export_c_func_async!(objc_setProperty(_, _, _, _, _, _)),
     export_c_func!(objc_copyStruct(_, _, _, _, _)),
-    export_c_func!(objc_sync_enter(_)),
+    export_c_func_async!(objc_sync_enter(_)),
     export_c_func!(objc_sync_exit(_)),
 ];

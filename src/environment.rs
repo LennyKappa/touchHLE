@@ -111,9 +111,6 @@ pub struct Environment {
 enum ThreadNextAction {
     /// Continue CPU emulation.
     Continue,
-    /// Yield to another thread.
-    /// IMM: bye bye!!!
-    Yield,
     /// Return to host.
     ReturnToHost,
     /// Debug the current CPU error.
@@ -131,8 +128,6 @@ enum ThreadBlock {
     Mutex(HostMutexId),
     // Thread is waiting for another thread to finish (joining).
     Joining(ThreadID, MutPtr<MutVoidPtr>),
-    // Deferred guest-to-host return
-    DeferredReturn,
 }
 
 impl Environment {
@@ -408,7 +403,6 @@ impl Environment {
         start_routine: abi::GuestFunction,
         user_data: mem::MutVoidPtr,
     ) -> ThreadID {
-        //todo!("Fix threading");
         // TODO: Stack size can be settable by guest, and should be reflected here.
         let stack_size = mem::Mem::SECONDARY_THREAD_STACK_SIZE;
         let stack_alloc = self.mem.alloc(stack_size);
@@ -494,7 +488,7 @@ impl Environment {
     /// Block the current thread until the given mutex unlocks.
     /// Other threads also blocking on this mutex may get access first.
     /// Also note that like [Self::sleep], this only takes effect after the host function returns.
-    pub fn block_on_mutex(&mut self, mutex_id: HostMutexId) {
+    pub async fn block_on_mutex(&mut self, mutex_id: HostMutexId) {
         // IMM: take effect before host fn returns
         assert!(matches!(
             self.threads[self.current_thread].blocked_by,
@@ -506,9 +500,10 @@ impl Environment {
             mutex_id
         );
         self.threads[self.current_thread].blocked_by = ThreadBlock::Mutex(mutex_id);
+        self.yield_thread().await;
     }
 
-    pub fn join_with_thread(&mut self, joinee_thread: ThreadID, ptr: MutPtr<MutVoidPtr>) {
+    pub async fn join_with_thread(&mut self, joinee_thread: ThreadID, ptr: MutPtr<MutVoidPtr>) {
         // IMM: take effect before host fn returns
         assert!(matches!(
             self.threads[self.current_thread].blocked_by,
@@ -520,6 +515,7 @@ impl Environment {
             joinee_thread
         );
         self.threads[self.current_thread].blocked_by = ThreadBlock::Joining(joinee_thread, ptr);
+        self.yield_thread().await;
     }
 
     /// Run the emulator. This is the main loop and won't return until app exit.
@@ -590,7 +586,6 @@ impl Environment {
                 env_wrapper.replace(env);
             }
         }
-        //Ok(())
     }
     /*
         Ok(())
@@ -697,35 +692,23 @@ impl Environment {
                             let stack: mem::MutVoidPtr = mem::Ptr::from_bits(*stack.start());
                             log_dbg!("Freeing thread {} stack {:?}", self.current_thread, stack);
                             self.mem.free(stack);
-                            ThreadNextAction::Yield
+                            self.yield_thread().await;
+                            // Should never reach here, the thread should never resume
+                            panic!("Exited thread resumed!");
                         }
                     }
                     dyld::Dyld::SVC_RETURN_TO_HOST => {
                         assert!(
                             svc_pc == self.dyld.return_to_host_routine().addr_without_thumb_bit()
                         );
+                        assert!(self.current_thread == initial_thread);
                         // IMM: This should also go
-                        if self.current_thread == initial_thread {
-                            log_dbg!(
-                                "Thread {} returned from host-to-guest call",
-                                self.current_thread
-                            );
-                            // Normal return from host-to-guest call.
-                            ThreadNextAction::ReturnToHost
-                        } else {
-                            // FIXME?: A drawback of the current thread model is that host-to-guest
-                            // calls affect the host call stack. This is a problem because it means
-                            // that threads have to return in the order they were called, which
-                            // means that threads that return while they aren't at the top of the
-                            // call stack have to wait until they can.
-                            log_dbg!("Thread {} returned from host-to-guest call but thread {} is top of call stack, deferring!",
-                                     self.current_thread,
-                                     initial_thread
-                            );
-                            self.threads[self.current_thread].blocked_by =
-                                ThreadBlock::DeferredReturn;
-                            ThreadNextAction::Yield
-                        }
+                        log_dbg!(
+                            "Thread {} returned from host-to-guest call",
+                            self.current_thread
+                        );
+                        // Normal return from host-to-guest call.
+                        ThreadNextAction::ReturnToHost
                     }
                     dyld::Dyld::SVC_LAZY_LINK | dyld::Dyld::SVC_LINKED_FUNCTIONS_BASE.. => {
                         if let Some(f) = self.dyld.get_svc_handler(
@@ -743,14 +726,11 @@ impl Environment {
                             self.threads[self.current_thread].in_host_function =
                                 was_in_host_function;
                             // Host function might have put the thread to sleep.
-                            if let ThreadBlock::NotBlocked =
-                                self.threads[self.current_thread].blocked_by
-                            {
-                                ThreadNextAction::Continue
-                            } else {
-                                log_dbg!("Yielding: thread {} is blocked.", self.current_thread);
-                                ThreadNextAction::Yield
-                            }
+                            assert!(matches!(
+                                self.threads[self.current_thread].blocked_by,
+                                ThreadBlock::NotBlocked
+                            ));
+                            ThreadNextAction::Continue
                         } else {
                             self.cpu.regs_mut()[cpu::Cpu::PC] = svc_pc;
                             ThreadNextAction::Continue
@@ -795,14 +775,12 @@ impl Environment {
                             );
                         }
                     }
-                    ThreadNextAction::Yield => self.yield_thread().await, // IMM: This can go!
                     ThreadNextAction::ReturnToHost => return,
                     ThreadNextAction::DebugCpuError(e) => {
                         step_and_debug = self.debug_cpu_error(e);
                     }
                 }
             }
-            log_dbg!("a!");
             self.yield_thread().await;
         }
     }
@@ -876,9 +854,6 @@ impl Environment {
                             suitable_thread = Some(i);
                             break;
                         }
-                    }
-                    ThreadBlock::DeferredReturn => {
-                        unimplemented!()
                     }
                     ThreadBlock::NotBlocked => {
                         suitable_thread = Some(i);

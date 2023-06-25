@@ -5,11 +5,13 @@
  */
 //! Threads.
 
+use touchHLE_proc_macros::boxify;
+
 use crate::abi::GuestFunction;
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::libc::errno::{EDEADLK, EINVAL};
 use crate::mem::{ConstPtr, MutPtr, MutVoidPtr, SafeRead};
-use crate::{Environment, ThreadID};
+use crate::{Environment, ThreadID, export_c_func_async};
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -168,7 +170,8 @@ fn pthread_self(env: &mut Environment) -> pthread_t {
     ptr
 }
 
-fn pthread_join(env: &mut Environment, thread: pthread_t, retval: MutPtr<MutVoidPtr>) -> i32 {
+#[boxify]
+async fn pthread_join(env: &mut Environment, thread: pthread_t, retval: MutPtr<MutVoidPtr>) -> i32 {
     let current_thread = env.current_thread;
     let curr_pthread_t = pthread_self(env);
     // The joinee is the thread that is being waited on.
@@ -210,7 +213,7 @@ fn pthread_join(env: &mut Environment, thread: pthread_t, retval: MutPtr<MutVoid
 
     host_obj_joinee.joined_by = Some(current_thread);
     // The executor will write the return value (void*) to *retval after the join occurs.
-    env.join_with_thread(joinee_thread, retval);
+    env.join_with_thread(joinee_thread, retval).await;
     0
 }
 fn pthread_setcanceltype(_env: &mut Environment, _type: i32, _oldtype: MutPtr<i32>) -> i32 {
@@ -233,7 +236,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(pthread_attr_destroy(_)),
     export_c_func!(pthread_create(_, _, _, _)),
     export_c_func!(pthread_self()),
-    export_c_func!(pthread_join(_, _)),
+    export_c_func_async!(pthread_join(_, _)),
     export_c_func!(pthread_setcanceltype(_, _)),
     export_c_func!(pthread_mach_thread_np(_)),
 ];

@@ -2,7 +2,6 @@
 // This also allows items in the crate to have non-snake-case names.
 #![allow(non_snake_case)]
 
-use proc_macro;
 use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use syn::{self, ReturnType};
@@ -16,7 +15,7 @@ pub fn boxify(
     let mut output = TokenStream::new();
     match syn::parse::<Item>(item.clone()).unwrap() {
         Item::Fn(mut fn_item) => {
-            let mut sig = &mut fn_item.sig;
+            let sig = &mut fn_item.sig;
             assert!(
                 sig.asyncness.is_some(),
                 "#[boxify] can only be called on async functions!"
@@ -30,11 +29,7 @@ pub fn boxify(
             assert!(
                 !sig.inputs.iter().any(|arg| {
                     if let FnArg::Typed(PatType { pat, .. }) = arg {
-                        if let Pat::Ident(_) | Pat::Verbatim(_) = **pat {
-                            false
-                        } else {
-                            true
-                        }
+                        !matches!(**pat, Pat::Ident(_) | Pat::Verbatim(_))
                     } else {
                         false
                     }
@@ -68,7 +63,7 @@ pub fn boxify(
 
             let name_str = sig.ident.to_string() + "_";
             let name_tok = name_str.parse::<TokenStream>().unwrap();
-            sig.ident = Ident::new(&name_str, Span::call_site().into());
+            sig.ident = Ident::new(&name_str, Span::call_site());
             let boxing_fn = if sig.receiver().is_some() {
                 //IMM: test must_use on initial item
                 quote::quote!(#(#attrs)* #[must_use] #vis #boxing_sig {Box::pin(self.#name_tok(#(#arg_names),*))})

@@ -5,10 +5,12 @@
  */
 //! Mutexes.
 
+use touchHLE_proc_macros::boxify;
+
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::libc::errno::{EBUSY, EDEADLK, EPERM};
 use crate::mem::{ConstPtr, MutPtr, Ptr, SafeRead};
-use crate::{Environment, ThreadID};
+use crate::{export_c_func_async, Environment, ThreadID};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
 
@@ -171,10 +173,14 @@ fn check_or_register_mutex(env: &mut Environment, mutex: MutPtr<pthread_mutex_t>
     }
 }
 
-fn pthread_mutex_lock(env: &mut Environment, mutex: MutPtr<pthread_mutex_t>) -> i32 {
+#[boxify]
+async fn pthread_mutex_lock(env: &mut Environment, mutex: MutPtr<pthread_mutex_t>) -> i32 {
     let mutex_data = env.mem.read(mutex);
     check_or_register_mutex(env, mutex);
-    host_mutex_lock(env, mutex_data.mutex_id).err().unwrap_or(0)
+    host_mutex_lock(env, mutex_data.mutex_id)
+        .await
+        .err()
+        .unwrap_or(0)
 }
 
 fn pthread_mutex_unlock(env: &mut Environment, mutex: MutPtr<pthread_mutex_t>) -> i32 {
@@ -221,7 +227,7 @@ pub fn host_mutex_init(env: &mut Environment, mutex_type: MutexType) -> HostMute
 
 /// Locks a mutex and returns the lock count or an error (as errno). Similar to
 /// pthread_mutex_lock, but for host code.
-pub fn host_mutex_lock(env: &mut Environment, mutex_id: HostMutexId) -> Result<u32, i32> {
+pub async fn host_mutex_lock(env: &mut Environment, mutex_id: HostMutexId) -> Result<u32, i32> {
     let current_thread = env.current_thread;
     let host_object: &mut _ = State::get_mut(env).mutexes.get_mut(&mutex_id).unwrap();
 
@@ -262,7 +268,7 @@ pub fn host_mutex_lock(env: &mut Environment, mutex_id: HostMutexId) -> Result<u
     host_object.waiting_count += 1;
 
     // Mutex is already locked, block thread until it isn't.
-    env.block_on_mutex(mutex_id);
+    env.block_on_mutex(mutex_id).await;
     // Lock count is always 1 after a thread-blocking lock.
     Ok(1)
 }
@@ -364,12 +370,11 @@ pub fn host_mutex_is_locked(env: &Environment, mutex_id: HostMutexId) -> bool {
 
 /// Relock mutex that was just unblocked. This should probably only be used by the thread scheduler.
 pub fn host_mutex_relock_unblocked(env: &mut Environment, mutex_id: HostMutexId) {
-    host_mutex_lock(env, mutex_id).unwrap();
-    State::get_mut(env)
-        .mutexes
-        .get_mut(&mutex_id)
-        .unwrap()
-        .waiting_count -= 1;
+    let current_thread = env.current_thread;
+    let host_object: &mut _ = State::get_mut(env).mutexes.get_mut(&mutex_id).unwrap();
+    assert!(host_object.locked.is_none());
+    host_object.locked = Some((current_thread, NonZeroU32::new(1).unwrap()));
+    host_object.waiting_count -= 1;
 }
 
 pub const FUNCTIONS: FunctionExports = &[
@@ -377,7 +382,7 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func!(pthread_mutexattr_settype(_, _)),
     export_c_func!(pthread_mutexattr_destroy(_)),
     export_c_func!(pthread_mutex_init(_, _)),
-    export_c_func!(pthread_mutex_lock(_)),
+    export_c_func_async!(pthread_mutex_lock(_)),
     export_c_func!(pthread_mutex_unlock(_)),
     export_c_func!(pthread_mutex_destroy(_)),
 ];

@@ -14,6 +14,8 @@
 //! - [Source code for
 //! `objc_sync_enter/exit`](https://opensource.apple.com/source/objc4/objc4-551.1/runtime/Accessors.subproj/objc-accessors.mm.auto.html),
 //! otherwise undocumented.
+use touchHLE_proc_macros::boxify;
+
 use crate::{
     environment::Environment,
     libc::pthread::mutex::{
@@ -27,14 +29,15 @@ use super::id;
 /// Backing function of @synchronized block entry.
 /// This function is entirely undocumented, with
 /// [source code provided](https://opensource.apple.com/source/objc4/objc4-551.1/runtime/objc-sync.h.auto.html).
-pub(super) fn objc_sync_enter(env: &mut Environment, obj: id) -> u32 {
+#[boxify]
+pub(super) async fn objc_sync_enter(env: &mut Environment, obj: id) -> u32 {
     if let Some(mutex_id) = env.objc.sync_mutexes.get(&obj) {
         log_dbg!(
             "Reentry of {:#x} to objc_sync_enter, using mutex #{}",
             obj.to_bits(),
             mutex_id
         );
-        host_mutex_lock(env, *mutex_id).unwrap();
+        host_mutex_lock(env, *mutex_id).await.unwrap();
     } else {
         let mutex_id = host_mutex_init(env, PTHREAD_MUTEX_RECURSIVE);
         log_dbg!(
@@ -42,7 +45,7 @@ pub(super) fn objc_sync_enter(env: &mut Environment, obj: id) -> u32 {
             obj.to_bits(),
             mutex_id
         );
-        host_mutex_lock(env, mutex_id).unwrap();
+        host_mutex_lock(env, mutex_id).await.unwrap();
         env.objc.sync_mutexes.insert(obj, mutex_id);
     }
     0u32 // OK

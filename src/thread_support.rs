@@ -34,7 +34,7 @@ impl Future for YieldFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<<Self as Future>::Output> {
-        let mut self_in = self.get_mut();
+        let self_in = self.get_mut();
         if !self_in.been_exec {
             self_in.been_exec = true;
             return Poll::Pending;
