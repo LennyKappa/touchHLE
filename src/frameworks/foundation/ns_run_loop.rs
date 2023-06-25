@@ -106,7 +106,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())run {
-    run_run_loop(env, this);
+    run_run_loop(env, this).await;
 }
 // TODO: other run methods
 
@@ -214,6 +214,6 @@ async fn run_run_loop(env: &mut Environment, run_loop: id) {
         // or until the next scheduled event, whichever is sooner. iPhone OS
         // apps can't do more than 60fps so this should be fine.
         let limit = Duration::from_millis(1000 / 60);
-        env.sleep(sleep_until.map_or(limit, |i| i.duration_since(Instant::now()).min(limit)), false).await;
+        env.sleep(sleep_until.map_or(limit, |i| i.duration_since(Instant::now()).min(limit))).await;
     }
 }

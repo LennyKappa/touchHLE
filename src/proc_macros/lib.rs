@@ -7,7 +7,7 @@ use proc_macro2::{Span, TokenStream};
 use quote::ToTokens;
 use syn::{self, ReturnType};
 use syn::{token, FnArg, Ident, Item, Pat, PatType, Type};
-/// IMM: doc
+/// IMM: docs & fix VAArgs
 #[proc_macro_attribute]
 pub fn boxify(
     _attr: proc_macro::TokenStream,
@@ -70,9 +70,10 @@ pub fn boxify(
             let name_tok = name_str.parse::<TokenStream>().unwrap();
             sig.ident = Ident::new(&name_str, Span::call_site().into());
             let boxing_fn = if sig.receiver().is_some() {
-                quote::quote!(#(#attrs)* #vis #boxing_sig {Box::pin(self.#name_tok(#(#arg_names),*))})
+                //IMM: test must_use on initial item
+                quote::quote!(#(#attrs)* #[must_use] #vis #boxing_sig {Box::pin(self.#name_tok(#(#arg_names),*))})
             } else {
-                quote::quote!(#(#attrs)* #vis #boxing_sig {Box::pin(#name_tok(#(#arg_names),*))})
+                quote::quote!(#(#attrs)* #[must_use] #vis #boxing_sig {Box::pin(#name_tok(#(#arg_names),*))})
             };
             output.extend(quote::quote!(#boxing_fn #fn_item));
         }

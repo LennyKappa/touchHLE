@@ -40,9 +40,10 @@ pub(super) enum CGContextSubclass {
 
 pub type CGContextRef = CFTypeRef;
 
-pub fn CGContextRelease(env: &mut Environment, c: CGContextRef) {
+#[boxify]
+pub async fn CGContextRelease(env: &mut Environment, c: CGContextRef) {
     if !c.is_null() {
-        CFRelease(env, c);
+        CFRelease(env, c).await;
     }
 }
 #[boxify]
@@ -93,7 +94,7 @@ fn CGContextDrawImage(
 
 pub const FUNCTIONS: FunctionExports = &[
     export_c_func_async!(CGContextRetain(_)),
-    export_c_func!(CGContextRelease(_)),
+    export_c_func_async!(CGContextRelease(_)),
     export_c_func!(CGContextSetRGBFillColor(_, _, _, _, _)),
     export_c_func!(CGContextFillRect(_, _)),
     export_c_func!(CGContextClearRect(_, _)),

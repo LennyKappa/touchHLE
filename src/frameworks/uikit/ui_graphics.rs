@@ -5,29 +5,33 @@
  */
 //! `UIGraphics.h`
 
+use touchHLE_proc_macros::boxify;
+
 use crate::dyld::{export_c_func, FunctionExports};
 use crate::frameworks::core_graphics::cg_context::{
     CGContextRef, CGContextRelease, CGContextRetain,
 };
 use crate::objc::nil;
-use crate::Environment;
+use crate::{Environment, export_c_func_async};
 
 #[derive(Default)]
 pub(super) struct State {
     pub(super) context_stack: Vec<CGContextRef>,
 }
 
-fn UIGraphicsPushContext(env: &mut Environment, context: CGContextRef) {
-    CGContextRetain(env, context);
+#[boxify]
+async fn UIGraphicsPushContext(env: &mut Environment, context: CGContextRef) {
+    CGContextRetain(env, context).await;
     env.framework_state
         .uikit
         .ui_graphics
         .context_stack
         .push(context);
 }
-fn UIGraphicsPopContext(env: &mut Environment) {
+#[boxify]
+async fn UIGraphicsPopContext(env: &mut Environment) {
     let context = env.framework_state.uikit.ui_graphics.context_stack.pop();
-    CGContextRelease(env, context.unwrap());
+    CGContextRelease(env, context.unwrap()).await;
 }
 pub(super) fn UIGraphicsGetCurrentContext(env: &mut Environment) -> CGContextRef {
     env.framework_state
@@ -40,7 +44,7 @@ pub(super) fn UIGraphicsGetCurrentContext(env: &mut Environment) -> CGContextRef
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(UIGraphicsPushContext(_)),
-    export_c_func!(UIGraphicsPopContext()),
+    export_c_func_async!(UIGraphicsPushContext(_)),
+    export_c_func_async!(UIGraphicsPopContext()),
     export_c_func!(UIGraphicsGetCurrentContext()),
 ];

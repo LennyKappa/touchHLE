@@ -16,7 +16,7 @@ type useconds_t = u32;
 
 #[boxify]
 pub async fn sleep(env: &mut Environment, seconds: u32) -> u32 {
-    env.sleep(Duration::from_secs(seconds.into()), true).await;
+    env.sleep(Duration::from_secs(seconds.into())).await;
     // sleep() returns the amount of time remaining that should have been slept,
     // but wasn't, if the thread was woken up early by a signal.
     // touchHLE never does that currently, so 0 is always correct here.
@@ -25,7 +25,7 @@ pub async fn sleep(env: &mut Environment, seconds: u32) -> u32 {
 
 #[boxify]
 async fn usleep(env: &mut Environment, useconds: useconds_t) -> i32 {
-    env.sleep(Duration::from_micros(useconds.into()), true).await;
+    env.sleep(Duration::from_micros(useconds.into())).await;
     0 // success
 }
 

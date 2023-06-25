@@ -34,7 +34,12 @@ use crate::Environment;
 /// by the method implementation. We are relying on CallFromGuest not
 /// overwriting it.
 #[allow(non_snake_case)]
-async fn objc_msgSend_inner(env: &mut Environment, receiver: id, selector: SEL, super2: Option<Class>) {
+async fn objc_msgSend_inner(
+    env: &mut Environment,
+    receiver: id,
+    selector: SEL,
+    super2: Option<Class>,
+) {
     if receiver == nil {
         // https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/ObjectiveC/Chapters/ocObjectsClasses.html#//apple_ref/doc/uid/TP30001163-CH11-SW7
         log_dbg!("[nil {}]", selector.as_str(&env.mem));
@@ -44,6 +49,29 @@ async fn objc_msgSend_inner(env: &mut Environment, receiver: id, selector: SEL, 
 
     let orig_class = super2.unwrap_or_else(|| ObjC::read_isa(receiver, &env.mem));
     assert!(orig_class != nil);
+    let name =
+        if let Some(host_object) = env.objc.get_host_object(orig_class).map(|obj| obj.as_any()) {
+            if let Some(crate::objc::classes::ClassHostObject { ref name, .. }) =
+                host_object.downcast_ref()
+            {
+                name
+            } else if let Some(crate::objc::classes::UnimplementedClass { ref name, .. }) =
+                host_object.downcast_ref()
+            {
+                name
+            } else if let Some(crate::objc::classes::FakeClass { ref name, .. }) =
+                host_object.downcast_ref()
+            {
+                name
+            } else {
+                panic!("class_getName called on non-class object!");
+            }
+        } else {
+            panic!("class_getName called on non-object!");
+        };
+    let sel_name = selector.as_str(&env.mem);
+    // IMM: Ths would be nice to actually have...
+    log_dbg!("[{} {} ...]", name, sel_name);
 
     // Traverse the chain of superclasses to find the method implementation.
 
@@ -206,14 +234,21 @@ pub(super) async fn objc_msgSendSuper2(
 /// can do runtime type-checking? Perhaps only in debug builds.
 pub async fn msg_send<R, P>(env: &mut Environment, args: P) -> R
 where
-    fn(&mut Environment, id, SEL) -> Pin<Box<(dyn futures::Future<Output = ()> + '_)>> : CallFromHost<R, P>,
-    fn(&mut Environment, MutVoidPtr, id, SEL) -> Pin<Box<(dyn futures::Future<Output = ()> + '_)>>: CallFromHost<R, P>,
+    fn(&mut Environment, id, SEL) -> Pin<Box<(dyn futures::Future<Output = ()> + '_)>>:
+        CallFromHost<R, P>,
+    fn(&mut Environment, MutVoidPtr, id, SEL) -> Pin<Box<(dyn futures::Future<Output = ()> + '_)>>:
+        CallFromHost<R, P>,
     R: GuestRet,
 {
     if R::SIZE_IN_MEM.is_some() {
-        (objc_msgSend_stret as fn(&mut Environment, _, _, _) -> Pin<Box<dyn Future<Output = _> + '_>>).call_from_host(env, args).await
+        (objc_msgSend_stret
+            as fn(&mut Environment, _, _, _) -> Pin<Box<dyn Future<Output = _> + '_>>)
+            .call_from_host(env, args)
+            .await
     } else {
-        (objc_msgSend as fn(&mut Environment, _, _) -> Pin<Box<dyn Future<Output = _> + '_>>).call_from_host(env, args).await
+        (objc_msgSend as fn(&mut Environment, _, _) -> Pin<Box<dyn Future<Output = _> + '_>>)
+            .call_from_host(env, args)
+            .await
     }
 }
 

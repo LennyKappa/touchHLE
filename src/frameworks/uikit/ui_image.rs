@@ -46,7 +46,7 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 - (())dealloc {
     let &UIImageHostObject { cg_image } = env.objc.borrow(this);
-    CGImageRelease(env, cg_image);
+    CGImageRelease(env, cg_image).await;
 
     env.objc.dealloc_object(this, &mut env.mem)
 }

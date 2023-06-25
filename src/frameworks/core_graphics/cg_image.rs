@@ -63,9 +63,10 @@ impl HostObject for CGImageHostObject {}
 //       to create this type.
 
 pub type CGImageRef = CFTypeRef;
-pub fn CGImageRelease(env: &mut Environment, c: CGImageRef) {
+#[boxify]
+pub async fn CGImageRelease(env: &mut Environment, c: CGImageRef) {
     if !c.is_null() {
-        CFRelease(env, c);
+        CFRelease(env, c).await;
     }
 }
 #[boxify]
@@ -125,7 +126,7 @@ fn CGImageGetHeight(env: &mut Environment, image: CGImageRef) -> GuestUSize {
 }
 
 pub const FUNCTIONS: FunctionExports = &[
-    export_c_func!(CGImageRelease(_)),
+    export_c_func_async!(CGImageRelease(_)),
     export_c_func_async!(CGImageRetain(_)),
     export_c_func!(CGImageGetAlphaInfo(_)),
     export_c_func_async!(CGImageGetColorSpace(_)),

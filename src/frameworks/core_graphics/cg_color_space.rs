@@ -65,9 +65,10 @@ pub fn CGColorSpaceCreateDeviceRGB(env: &mut Environment) -> CGColorSpaceRef {
     )
 }
 
-pub fn CGColorSpaceRelease(env: &mut Environment, cs: CGColorSpaceRef) {
+#[boxify]
+pub async fn CGColorSpaceRelease(env: &mut Environment, cs: CGColorSpaceRef) {
     if !cs.is_null() {
-        CFRelease(env, cs);
+        CFRelease(env, cs).await;
     }
 }
 #[boxify]
@@ -90,5 +91,5 @@ pub const FUNCTIONS: FunctionExports = &[
     export_c_func_async!(CGColorSpaceCreateWithName(_)),
     export_c_func!(CGColorSpaceCreateDeviceRGB()),
     export_c_func_async!(CGColorSpaceRetain(_)),
-    export_c_func!(CGColorSpaceRelease(_)),
+    export_c_func_async!(CGColorSpaceRelease(_)),
 ];
