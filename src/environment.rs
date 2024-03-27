@@ -10,7 +10,7 @@
 
 mod mutex;
 
-use crate::abi::GuestRet;
+use crate::abi::{CallFromHost, GuestRet};
 use crate::libc::semaphore::sem_t;
 use crate::mem::{MutPtr, MutVoidPtr};
 use crate::{
@@ -328,13 +328,12 @@ impl Environment {
             let count = section.size / 4;
             for i in 0..count {
                 let func = env.mem.read(base + i);
-                func.call(&mut env);
+                () = func.call_from_host(&mut env, ());
             }
             log_dbg!("Static initialization done");
         }
 
         env.cpu.branch(entry_point_addr);
-
         Ok(env)
     }
 
