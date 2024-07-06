@@ -112,6 +112,11 @@ pub const CLASSES: ClassExports = objc_classes! {
     this
 }
 
+- (id)initWithContentsOfMappedFile:(id)path {
+    // IMM?: This is ok, right?
+    msg![env; this initWithContentsOfFile:path]
+}
+
 // FIXME: writes should be atomic
 - (bool)writeToFile:(id)path // NSString*
          atomically:(bool)_use_aux_file {
@@ -156,10 +161,12 @@ pub const CLASSES: ClassExports = objc_classes! {
 }
 
 - (())getBytes:(MutPtr<u8>)buffer range:(NSRange)range {
+    log!("{:?}", this);
     if range.length == 0 {
         return;
     }
     let &NSDataHostObject { bytes, length, .. } = env.objc.borrow(this);
+    let NSRange {location: lc, length: ln} = range;
     // TODO: throw NSRangeException if out-of-range instead of panic?
     assert!(range.location < length && range.location + range.length <= length);
     env.mem.memmove(

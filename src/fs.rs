@@ -341,6 +341,20 @@ fn handle_open_err<T, E: std::fmt::Display, P: std::fmt::Debug>(
     }
 }
 
+#[derive(Debug, Clone)]
+pub enum FileType {
+    RegularFile,
+    Directory,
+}
+
+/// Metadata for the virtual filesystem, similar to [std::fs::Metadata].
+/// Currently extremely incomplete, subject to change.
+pub struct Metadata {
+    pub filetype: FileType,
+    pub permissions: (bool, bool, bool), // R, W, X
+    pub size: u64,
+}
+
 /// Like [File] but for the guest filesystem.
 #[derive(Debug)]
 pub enum GuestFile {
@@ -377,6 +391,29 @@ impl GuestFile {
             GuestFile::ResourceFile(file) => {
                 panic!("Attempt to resize a read-only file: {:?}", file)
             }
+        }
+    }
+    pub fn metadata(&self) -> Metadata {
+        match self {
+            GuestFile::File(file) => {
+                let real_metadata = file.metadata().unwrap();
+                Metadata {
+                    filetype: FileType::RegularFile,
+                    // IMM: find real perms!
+                    permissions: (true, true, false),
+                    size: real_metadata.len(),
+                }
+            }
+            GuestFile::IpaBundleFile(file) => Metadata {
+                filetype: FileType::RegularFile,
+                permissions: (true, false, false),
+                size: file.len(),
+            },
+            GuestFile::ResourceFile(file) => Metadata {
+                filetype: FileType::RegularFile,
+                permissions: (true, false, false),
+                size: file.len().unwrap(),
+            },
         }
     }
 }
@@ -631,20 +668,51 @@ impl Fs {
         self.lookup_node(path).is_some()
     }
 
-    /// Returns access information about the file/directory at the path
-    /// (exists, read, write, execute)
-    pub fn access(&self, path: &GuestPath) -> (bool, bool, bool, bool) {
+    pub fn get_metadata(&self, path: &GuestPath) -> Option<Metadata> {
         match self.lookup_node(path) {
-            None => (false, false, false, false),
+            None => None,
             Some(node) => match node {
                 FsNode::File {
-                    location: _,
+                    location,
                     writeable,
-                } => (true, true, *writeable, false),
+                } => match location {
+                    FileLocation::Path(path) => {
+                        let real_metadata = handle_open_err(std::fs::metadata(path), path);
+                        Some(Metadata {
+                            filetype: FileType::RegularFile,
+                            permissions: (true, *writeable, false),
+                            size: real_metadata.len(),
+                        })
+                    }
+                    FileLocation::IpaFileRef(file_ref) => {
+                        let file = file_ref.open();
+                        Some(Metadata {
+                            filetype: FileType::RegularFile,
+                            permissions: (true, false, false),
+                            size: file.len(),
+                        })
+                    }
+                    FileLocation::ResourceFilePath(path) => {
+                        let file = handle_open_err(paths::ResourceFile::open(path), path);
+                        Some(Metadata {
+                            filetype: FileType::RegularFile,
+                            permissions: (true, false, false),
+                            size: handle_open_err(file.len(), path),
+                        })
+                    }
+                },
                 FsNode::Directory {
                     children: _,
                     writeable,
-                } => (true, true, writeable.is_some(), true),
+                } => {
+                    Some(Metadata {
+                        filetype: FileType::Directory,
+                        permissions: (true, writeable.is_some(), true),
+                        // The actual size of a directory is variable,
+                        // this is just a convenient non-zero number.
+                        size: 100,
+                    })
+                }
             },
         }
     }

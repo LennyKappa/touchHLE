@@ -183,6 +183,8 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (NSUInteger)countByEnumeratingWithState:(MutPtr<NSFastEnumerationState>)state
                                   objects:(MutPtr<id>)stackbuf
                                     count:(NSUInteger)len {
+    // TODO?: Should block mutation on reuse of the object, should be fine
+    // for well behaved apps.
     let mut iterator = env.objc.borrow::<SetHostObject>(this).dict.iter_keys();
     fast_enumeration_helper(&mut env.mem, this, &mut iterator, state, stackbuf, len)
 }
@@ -194,6 +196,12 @@ pub const CLASSES: ClassExports = objc_classes! {
     let mut host_obj: SetHostObject = std::mem::take(env.objc.borrow_mut(this));
     host_obj.dict.insert(env, object, null, /* copy_key: */ false);
     *env.objc.borrow_mut(this) = host_obj;
+}
+
+- (()) removeAllObjects {
+    *env.objc.borrow_mut(this) = SetHostObject {
+        dict: Default::default(),
+    };
 }
 
 @end

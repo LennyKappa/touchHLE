@@ -9,6 +9,7 @@ use super::ui_graphics::UIGraphicsGetCurrentContext;
 use crate::font::{Font, TextAlignment, WrapMode};
 use crate::frameworks::core_graphics::cg_bitmap_context::CGBitmapContextDrawer;
 use crate::frameworks::core_graphics::{CGFloat, CGPoint, CGRect, CGSize};
+use crate::frameworks::foundation::ns_string::to_rust_string;
 use crate::frameworks::foundation::NSInteger;
 use crate::objc::{autorelease, id, objc_classes, ClassExports, HostObject};
 use crate::Environment;
@@ -103,6 +104,25 @@ pub const CLASSES: ClassExports = objc_classes! {
     autorelease(env, new)
 }
 
+// IMM: Me when i lie really bad
++ (id)fontWithName:(id)_name size:(CGFloat)size {
+    log!("{}", to_rust_string(env,_name));
+    // Cache for later use
+    if env.framework_state.uikit.ui_font.regular.is_none() {
+        env.framework_state.uikit.ui_font.regular = Some(Font::sans_regular());
+    }
+    let host_object = UIFontHostObject {
+        size,
+        kind: FontKind::Regular,
+    };
+    let new = env.objc.alloc_object(this, Box::new(host_object), &mut env.mem);
+    autorelease(env, new)
+}
+
+// IMM: verify
+- (CGFloat)pointSize {
+    env.objc.borrow::<UIFontHostObject>(this).size
+}
 @end
 
 };

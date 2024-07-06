@@ -13,6 +13,7 @@
 
 use super::{id, nil, Class, ObjC, IMP, SEL};
 use crate::abi::{CallFromHost, GuestRet};
+use crate::cpu::Cpu;
 use crate::mem::{ConstPtr, MutVoidPtr, SafeRead};
 use crate::Environment;
 use std::any::TypeId;
@@ -89,6 +90,19 @@ fn objc_msgSend_inner(env: &mut Environment, receiver: id, selector: SEL, super2
             }
 
             if let Some(imp) = methods.get(&selector) {
+                log_dbg!(
+                    "From {}: [{:?} (class {} as {}) {} ...]",
+                    if message_type_info.is_some() {
+                        "Host".to_owned()
+                    } else {
+                        let pc = env.cpu.regs()[Cpu::LR];
+                        format!("{} ({:x})", "Guest", pc)
+                    },
+                    receiver,
+                    env.objc.get_class_name(orig_class),
+                    env.objc.get_class_name(class),
+                    selector.as_str(&env.mem)
+                );
                 match imp {
                     IMP::Host(host_imp) => {
                         // TODO: do type checks when calling GuestIMPs too.

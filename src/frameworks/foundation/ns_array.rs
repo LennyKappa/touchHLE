@@ -264,11 +264,29 @@ pub const CLASSES: ClassExports = objc_classes! {
     env.objc.borrow::<ArrayHostObject>(this).array[index as usize]
 }
 
+// NSFastEnumeration implementation
+- (NSUInteger)countByEnumeratingWithState:(MutPtr<NSFastEnumerationState>)state
+                                  objects:(MutPtr<id>)stackbuf
+                                    count:(NSUInteger)len {
+    // TODO?: Should block mutation on reuse of the object, should be fine
+    // for well behaved apps.
+    let mut iterator = env.objc.borrow_mut::<ArrayHostObject>(this).array.iter().copied();
+    fast_enumeration_helper(&mut env.mem, this, &mut iterator, state, stackbuf, len)
+}
+
 // TODO: more mutation methods
 
 - (())addObject:(id)object {
     retain(env, object);
     env.objc.borrow_mut::<ArrayHostObject>(this).array.push(object);
+}
+
+- (())removeAllObjects {
+    let objects = std::mem::take(&mut env.objc.borrow_mut::<ArrayHostObject>(this).array);
+    for object in objects {
+        release(env, object)
+    }
+
 }
 
 - (())removeObjectAtIndex:(NSUInteger)index {

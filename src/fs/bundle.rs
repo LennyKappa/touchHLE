@@ -243,6 +243,13 @@ pub struct IpaFile {
     file: std::io::Cursor<Vec<u8>>,
 }
 
+impl IpaFile {
+    /// Gets file length.
+    pub fn len(&self) -> u64 {
+        self.file.get_ref().len() as u64
+    }
+}
+
 impl Debug for IpaFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IpaFile")

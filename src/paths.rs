@@ -21,6 +21,7 @@
 //! See also [crate::fs], which provides a virtual filesystem for the guest app
 //! and defines path types.
 
+use std::error::Error;
 use std::io::{Read, Seek};
 use std::path::Path;
 
@@ -57,6 +58,16 @@ impl ResourceFile {
     }
     pub fn get(&mut self) -> &mut (impl Read + Seek) {
         &mut self.file
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn len(&self) -> Result<u64, Box<dyn Error>> {
+        self.file.len().map(|len| len as u64).ok_or("Failed to get file length".into())
+    }
+
+    #[cfg(not(target_os = "android"))]
+    pub fn len(&self) -> Result<u64, Box<dyn Error>> {
+        Ok(self.file.metadata()?.len())
     }
 }
 impl std::fmt::Debug for ResourceFile {

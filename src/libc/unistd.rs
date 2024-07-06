@@ -55,7 +55,9 @@ fn isatty(_env: &mut Environment, fd: FileDescriptor) -> i32 {
 fn access(env: &mut Environment, path: ConstPtr<u8>, mode: i32) -> i32 {
     let binding = env.mem.cstr_at_utf8(path).unwrap();
     let guest_path = GuestPath::new(&binding);
-    let (exists, r, _, _) = env.fs.access(guest_path);
+    let metadata = env.fs.get_metadata(guest_path);
+    let exists = metadata.is_some();
+    let (r, _, _) = metadata.map_or((false, false, false), |m| m.permissions);
     // TODO: set errno
     match mode {
         F_OK => {

@@ -182,7 +182,6 @@ pub const CLASSES: ClassExports = objc_classes! {
 
 // NSCopying implementation
 - (id)copyWithZone:(NSZonePtr)_zone {
-    // TODO: override this once we have NSMutableString!
     retain(env, this)
 }
 
@@ -212,6 +211,95 @@ pub const CLASSES: ClassExports = objc_classes! {
 - (id)init {
     *env.objc.borrow_mut(this) = <DictionaryHostObject as Default>::default();
     this
+}
+
+// TODO: enumeration, more init methods, etc
+
+- (NSUInteger)count {
+    env.objc.borrow::<DictionaryHostObject>(this).count
+}
+- (id)objectForKey:(id)key {
+    let host_obj: DictionaryHostObject = std::mem::take(env.objc.borrow_mut(this));
+    let res = host_obj.lookup(env, key);
+    *env.objc.borrow_mut(this) = host_obj;
+    res
+}
+
+@end
+
+@implementation NSMutableDictionary : NSDictionary
+
++ (id)allocWithZone:(NSZonePtr)zone {
+    // NSDictionary might be subclassed by something which needs allocWithZone:
+    // to have the normal behaviour. Unimplemented: call superclass alloc then.
+    assert!(this == env.objc.get_known_class("NSMutableDictionary", &mut env.mem));
+    msg_class![env; _touchHLE_NSMutableDictionary allocWithZone:zone]
+}
+
++ (id)dictionary {
+    let new_dict: id = msg![env; this alloc];
+    let new_dict: id = msg![env; new_dict init];
+    autorelease(env, new_dict)
+}
+
++ (id)dictionaryWithObjectsAndKeys:(id)first_object, ...dots {
+    let new_dict: id = msg![env; this alloc];
+    let new_dict = init_with_objects_and_keys(env, new_dict, first_object, dots.start());
+    autorelease(env, new_dict)
+}
+
+// These probably comes from some category related to plists.
++ (id)dictionaryWithContentsOfFile:(id)_path { // NSString*
+    todo!("Stub for now");
+}
++ (id)dictionaryWithContentsOfURL:(id)_url { // NSURL*
+    todo!("Stub for now");
+}
+
+- (id)init {
+    todo!("TODO: Implement [mutabledictionary init] for custom subclasses")
+}
+
+// NSCopying implementation
+- (id)copyWithZone:(NSZonePtr)_zone {
+    todo!("NSCopying for NSMutableDictionary");
+}
+
+- (())setObject:(id)obj forKey:(id)key {
+    let mut host_obj: DictionaryHostObject = std::mem::take(env.objc.borrow_mut(this));
+    host_obj.insert(env, key, obj, false);
+    *env.objc.borrow_mut(this) = host_obj;
+}
+
+@end
+
+// Our private subclass that is the single implementation of NSDictionary for
+// the time being.
+@implementation _touchHLE_NSMutableDictionary: NSMutableDictionary
+
++ (id)allocWithZone:(NSZonePtr)_zone {
+    let host_object = Box::<DictionaryHostObject>::default();
+    env.objc.alloc_object(this, host_object, &mut env.mem)
+}
+
+- (())dealloc {
+    std::mem::take(env.objc.borrow_mut::<DictionaryHostObject>(this)).release(env);
+
+    env.objc.dealloc_object(this, &mut env.mem)
+}
+
+- (id)initWithObjectsAndKeys:(id)first_object, ...dots {
+    init_with_objects_and_keys(env, this, first_object, dots.start())
+}
+
+- (id)init {
+    *env.objc.borrow_mut(this) = <DictionaryHostObject as Default>::default();
+    this
+}
+
+- (id)initWithCapacity:(NSUInteger)_cap {
+    // me when i lie
+    msg![env; this init]
 }
 
 // TODO: enumeration, more init methods, etc
