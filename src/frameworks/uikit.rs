@@ -92,8 +92,7 @@ pub fn handle_events(env: &mut Environment) -> Option<Instant> {
             Event::EnterDebugger => {
                 if env.is_debugging_enabled() {
                     log!("Handling EnterDebugger event: entering debugger.");
-                    let step = env.enter_debugger(/* reason: */ None);
-                    assert!(!step, "Can't step right now!"); // TODO?
+                    env.enter_debugger(/* reason: */ None);
                 } else {
                     log!("Ignoring EnterDebugger event: no debugger connected.");
                 }

@@ -20,6 +20,10 @@ impl<T> NullableBox<T> {
         }
     }
 
+    pub fn is_null(&self) -> bool {
+        self.inner.is_none()
+    }
+
     /// Make a new null (empty) NullableBox.
     ///
     /// SAFETY: You **MUST NEVER** allow this to be derefrenced, which means

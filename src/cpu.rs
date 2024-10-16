@@ -118,7 +118,7 @@ pub enum CpuState {
 }
 
 /// A reason that can cause CPU execution to be interrupted.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CpuError {
     /// Memory error during execution (probably a null page access).
     MemoryError,
